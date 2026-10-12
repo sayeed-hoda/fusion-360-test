@@ -30,12 +30,13 @@ MAX_TOOL_ROUNDS = 16
 GLM_READ_TIMEOUT_S = 300
 GLM_READ_ATTEMPTS = 3
 GLM_READ_RETRY_WAIT_S = 2
+FUSION_POLL_S = 2.0
 MISSING_KEY_MESSAGE = (
     "Set GLM_API_KEY in the environment. Do not put the key in a file in this repo."
 )
-UNREACHABLE = (
-    "Fusion is not reachable on 127.0.0.1:9876; open Fusion and start the "
-    "Fusion360MCP add-in (Shift+S > Add-Ins > Run)."
+WAITING_MESSAGE = (
+    "Waiting for the Fusion add-in on 127.0.0.1:9876. "
+    "Checking every {seconds}s. Start Fusion360MCP (Shift+S > Add-Ins > Run)."
 )
 SYSTEM = """You control Fusion 360 through the tools this process exposes.
 Call list_tools once. It returns each tool's name, description, and parameters.
@@ -339,6 +340,38 @@ def resolve_model(base_url: str, api_key: str, explicit: str | None) -> str:
     return DEFAULT_MODEL
 
 
+def _poll_label(poll_s: float) -> int | float:
+    if poll_s >= 1 and float(poll_s).is_integer():
+        return int(poll_s)
+    return poll_s
+
+
+def wait_for_addon(
+    service: Any,
+    write: Callable[[str], None] = print,
+    sleep: Callable[[float], None] = time.sleep,
+    poll_s: float = FUSION_POLL_S,
+) -> dict[str, Any]:
+    """Poll until the add-in answers. Ctrl+C leaves the wait."""
+    announced = False
+    while True:
+        try:
+            status = service.get_status()
+        except Exception:
+            status = None
+        if isinstance(status, dict) and status.get("connected"):
+            document = status.get("document")
+            if isinstance(document, str) and document:
+                write(f"Fusion add-in is connected. document={document}")
+            else:
+                write("Fusion add-in is connected.")
+            return status
+        if not announced:
+            write(WAITING_MESSAGE.format(seconds=_poll_label(poll_s)))
+            announced = True
+        sleep(poll_s)
+
+
 def run_repl(
     *,
     service: Any,
@@ -374,8 +407,10 @@ def main(
     complete: Callable[[list[dict[str, Any]]], dict[str, Any]] | None = None,
     read_line: Callable[[str], str] = input,
     write: Callable[[str], None] = print,
+    sleep: Callable[[float], None] = time.sleep,
+    poll_s: float = FUSION_POLL_S,
 ) -> int:
-    """Start the chat. Returns 1 when the key is missing or Fusion is down."""
+    """Start the chat. Waits until the add-in answers. Returns 1 with no key."""
     api_key = api_key_from_env()
     if not api_key:
         write(MISSING_KEY_MESSAGE)
@@ -384,10 +419,11 @@ def main(
         from fusion_agent.service import CommandService
 
         service = CommandService()
-    status = service.get_status()
-    if not isinstance(status, dict) or not status.get("connected"):
-        write(UNREACHABLE)
-        return 1
+    try:
+        wait_for_addon(service, write=write, sleep=sleep, poll_s=poll_s)
+    except KeyboardInterrupt:
+        write("")
+        return 0
     model = os.environ.get("GLM_MODEL") or DEFAULT_MODEL
     if complete is None:
         base_url = os.environ.get("GLM_BASE_URL") or DEFAULT_BASE_URL

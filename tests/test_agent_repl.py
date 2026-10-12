@@ -9,12 +9,12 @@ import pytest
 from fusion_agent.core.errors import AgentError
 from fusion_agent.repl import (
     MISSING_KEY_MESSAGE,
-    UNREACHABLE,
     chat_once,
     main,
     post_chat,
     run_tool,
     tool_message_content,
+    wait_for_addon,
 )
 from fusion_agent.service import CommandService
 
@@ -171,7 +171,7 @@ def test_missing_key_does_not_open_fusion(monkeypatch: pytest.MonkeyPatch):
     assert lines == [MISSING_KEY_MESSAGE]
 
 
-def test_fusion_down_does_not_ask_glm(monkeypatch: pytest.MonkeyPatch):
+def test_interrupt_while_waiting_does_not_ask_glm(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("GLM_API_KEY", "glm-secret-key")
 
     class Down:
@@ -181,11 +181,78 @@ def test_fusion_down_does_not_ask_glm(monkeypatch: pytest.MonkeyPatch):
     def forbid_complete(_messages):
         raise AssertionError("GLM was called while Fusion was down")
 
+    def interrupt(_seconds: float) -> None:
+        raise KeyboardInterrupt
+
     lines: list[str] = []
-    code = main(service=Down(), complete=forbid_complete, write=lines.append)
-    assert code == 1
-    assert lines == [UNREACHABLE]
+    code = main(
+        service=Down(),
+        complete=forbid_complete,
+        write=lines.append,
+        sleep=interrupt,
+        poll_s=0.01,
+    )
+    assert code == 0
+    assert lines[0].startswith("Waiting for the Fusion add-in")
+    assert "fusion agent ready" not in "\n".join(lines)
     assert all("glm-secret-key" not in line for line in lines)
+
+
+def test_repl_waits_until_the_addin_answers(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("GLM_API_KEY", "glm-secret-key")
+    checks = {"n": 0}
+
+    class Later:
+        def get_status(self):
+            checks["n"] += 1
+            if checks["n"] < 3:
+                return {"connected": False}
+            return {"connected": True, "document": "Untitled"}
+
+    asked: list[str] = []
+
+    def complete(messages):
+        asked.append(messages[-1]["content"])
+        return {"role": "assistant", "content": "Ready."}
+
+    lines: list[str] = []
+    code = main(
+        service=Later(),
+        complete=complete,
+        read_line=lambda _prompt: "make a box" if not asked else "/quit",
+        write=lines.append,
+        sleep=lambda _seconds: None,
+        poll_s=0.01,
+    )
+    assert code == 0
+    assert checks["n"] == 3
+    joined = "\n".join(lines)
+    waiting = joined.index("Waiting for the Fusion add-in")
+    connected = joined.index("document=Untitled")
+    ready = joined.index("fusion agent ready")
+    assert waiting < connected < ready
+    assert asked == ["make a box"]
+
+
+def test_wait_keeps_polling_when_status_raises():
+    class Flaky:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def get_status(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise ConnectionError("refused")
+            return {"connected": True}
+
+    lines: list[str] = []
+    status = wait_for_addon(
+        Flaky(), write=lines.append, sleep=lambda _s: None, poll_s=2
+    )
+    assert status["connected"] is True
+    assert lines[0].startswith("Waiting for the Fusion add-in")
+    assert "every 2s" in lines[0]
+    assert lines[-1] == "Fusion add-in is connected."
 
 
 def test_repl_runs_one_request_and_quits(monkeypatch: pytest.MonkeyPatch):
