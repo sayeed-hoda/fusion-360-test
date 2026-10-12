@@ -11,6 +11,7 @@ dependencies = [
     "anyio>=4.5",
     "click>=8.1",
     "mcp>=1.0,<2",
+    "websockets>=12",
 ]
 
 [project.urls]
@@ -20,6 +21,7 @@ Issues = "https://github.com/faust-machines/fusion360-mcp-server/issues"
 
 [project.scripts]
 fusion360-mcp-server = "fusion360_mcp:main"
+fusion-agent = "fusion_agent.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
