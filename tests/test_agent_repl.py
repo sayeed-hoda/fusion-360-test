@@ -234,19 +234,30 @@ def test_repl_waits_until_the_addin_answers(monkeypatch: pytest.MonkeyPatch):
     assert asked == ["make a box"]
 
 
-def test_default_repl_uses_websocket_without_pairing(
+def test_default_repl_listens_and_waits_for_fusion_to_initiate_websocket(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setenv("GLM_API_KEY", "glm-secret-key")
 
-    class Local:
-        def get_status(self):
-            return {"connected": True, "document": "Local design"}
+    class Link:
+        url = "ws://127.0.0.1:53117/api/v1/integrations/plugin/connect"
 
-        def list_tools(self):
-            return {"tools": []}
+        def __init__(self, **_kwargs):
+            self.started = False
+            self.stopped = False
 
-    monkeypatch.setattr("fusion_agent.service.CommandService", Local)
+        def start(self):
+            self.started = True
+
+        def wait_for_hello(self):
+            assert self.started is True
+            return {"document": "Local design", "device_id": "dev-1"}
+
+        def stop(self):
+            self.stopped = True
+
+    link = Link()
+    monkeypatch.setattr("fusion_agent.repl_link.FusionReplLink", lambda **_kwargs: link)
     lines: list[str] = []
     code = main(
         complete=lambda _messages: {"role": "assistant", "content": "Ready."},
@@ -254,12 +265,13 @@ def test_default_repl_uses_websocket_without_pairing(
         write=lines.append,
     )
     assert code == 0
+    assert link.stopped is True
     joined = "\n".join(lines)
-    assert "Fusion add-in is connected. document=Local design" in joined
-    assert "Connecting Fusion to the local WebSocket" in joined
+    assert "Checking every" not in joined
+    assert "WebSocket listening" in joined
     assert "Fusion WebSocket connected. document=Local design" in joined
     assert "fusion agent ready" in joined
-    assert "Paste a TYM1" not in joined
+    assert "click Pair in Fusion" in joined
 
 
 def test_wait_keeps_polling_when_status_raises():

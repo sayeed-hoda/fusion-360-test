@@ -1,8 +1,7 @@
-"""Chat with a GLM model through the same WebSocket used by Tymeline cloud.
+"""Chat with a GLM model after Fusion opens the pairing WebSocket.
 
-The REPL starts a loopback ``agent_ws_v1`` gateway and connects the real
-daemon WebSocket client to it. The daemon forwards commands to the Fusion
-add-in on ``127.0.0.1:9876``. Pairing remains specific to the cloud server.
+The REPL listens on the loopback ``agent_ws_v1`` gateway. Pairing in Fusion
+starts the daemon, which initiates the WebSocket just as it does for cloud.
 
 The GLM key is read from the environment. It is not stored in this repo.
 
@@ -15,7 +14,6 @@ from __future__ import annotations
 
 import json
 import os
-import secrets
 import time
 import urllib.error
 import urllib.request
@@ -40,7 +38,8 @@ WAITING_MESSAGE = (
     "Checking every {seconds}s. Start TymelineFusion360 (Shift+S > Add-Ins > Run)."
 )
 WAITING_SOCKET_MESSAGE = (
-    "Connecting Fusion to the local WebSocket at {url}."
+    "WebSocket listening at {url}. Waiting for Fusion to connect; "
+    "paste the local TYM1 key and click Pair in Fusion."
 )
 SYSTEM = """You control Fusion 360 through the tools this process exposes.
 Call list_tools once. It returns each tool's name, description, and parameters.
@@ -415,9 +414,9 @@ def main(
     poll_s: float = FUSION_POLL_S,
     link: Any = None,
 ) -> int:
-    """Start the chat and route its Fusion commands through agent_ws_v1.
+    """Start the chat. Fusion initiates the agent_ws_v1 connection.
 
-    Explicit ``service`` and ``link`` arguments are test seams.
+    An explicit ``service`` keeps the direct transport available to tests.
     Returns 1 when the GLM key is missing.
     """
     api_key = api_key_from_env()
@@ -425,49 +424,18 @@ def main(
         write(MISSING_KEY_MESSAGE)
         return 1
     fusion_link = None
-    ws_client = None
-    if service is None and link is None:
-        from fusion_agent.repl_link import FusionReplLink
-        from fusion_agent.service import CommandService
-        from fusion_agent.transport.ws_client import WsClient
-
-        addon_service = CommandService()
-        try:
-            wait_for_addon(addon_service, write=write, sleep=sleep, poll_s=poll_s)
-        except KeyboardInterrupt:
-            write("")
-            return 0
-        fusion_link = FusionReplLink(status=write)
-        try:
-            fusion_link.start()
-        except OSError as exc:
-            write(f"Could not listen for the local WebSocket: {exc}")
-            fusion_link.stop()
-            return 1
-        write(WAITING_SOCKET_MESSAGE.format(url=fusion_link.url))
-        ws_client = WsClient(
-            fusion_link.url,
-            secrets.token_urlsafe(32),
-            token_id="local-repl",
-            service=addon_service,
-            status=write,
-        )
-        ws_client.start()
-        try:
-            hello = fusion_link.wait_for_hello()
-        except KeyboardInterrupt:
-            write("")
-            ws_client.stop()
-            fusion_link.stop()
-            return 0
-        document = hello.get("document") if isinstance(hello, dict) else None
-        if isinstance(document, str) and document:
-            write(f"Fusion WebSocket connected. document={document}")
-        else:
-            write("Fusion WebSocket connected.")
-        service = fusion_link
-    if link is not None:
+    if service is None:
         fusion_link = link
+        if fusion_link is None:
+            from fusion_agent.repl_link import FusionReplLink
+
+            fusion_link = FusionReplLink(status=write)
+            try:
+                fusion_link.start()
+            except OSError as exc:
+                write(f"Could not listen for Fusion: {exc}")
+                fusion_link.stop()
+                return 1
         write(WAITING_SOCKET_MESSAGE.format(url=fusion_link.url))
         try:
             hello = fusion_link.wait_for_hello()
@@ -481,7 +449,7 @@ def main(
         else:
             write("Fusion WebSocket connected.")
         service = fusion_link
-    elif ws_client is None:
+    else:
         try:
             wait_for_addon(service, write=write, sleep=sleep, poll_s=poll_s)
         except KeyboardInterrupt:
@@ -501,8 +469,6 @@ def main(
     except KeyboardInterrupt:
         write("")
     finally:
-        if ws_client is not None:
-            ws_client.stop()
         if fusion_link is not None:
             fusion_link.stop()
     return 0

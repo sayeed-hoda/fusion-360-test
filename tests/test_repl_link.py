@@ -249,7 +249,7 @@ def test_repl_waits_for_the_socket_then_calls_a_tool(monkeypatch: pytest.MonkeyP
     assert code == 0
     assert link.stopped is True
     assert link.calls == [{"name": "create_box", "arguments": {"width": 1}}]
-    waiting = joined.index("Connecting Fusion to the local WebSocket")
+    waiting = joined.index("WebSocket listening")
     connected = joined.index("document=Untitled")
     ready = joined.index("fusion agent ready")
     assert waiting < connected < ready
@@ -283,7 +283,7 @@ def test_interrupt_while_waiting_for_the_socket_does_not_ask_glm(
     code = main(link=link, complete=forbid, write=lines.append)
     assert code == 0
     assert link.stopped is True
-    assert lines[0].startswith("Connecting Fusion to the local WebSocket")
+    assert lines[0].startswith("WebSocket listening")
     assert "fusion agent ready" not in "\n".join(lines)
     assert all("glm-secret-key" not in line for line in lines)
 
