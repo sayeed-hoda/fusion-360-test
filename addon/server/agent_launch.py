@@ -23,9 +23,13 @@ _PYTHON_ENV_KEYS = (
     "PYTHONUSERBASE",
 )
 
-# Windows: detach from Fusion's console so the daemon outlives the add-in.
-_DETACHED_PROCESS = 0x00000008
+# Windows: a console-subsystem fusion-agent.exe would open a command prompt
+# when Fusion starts it. CREATE_NO_WINDOW suppresses that window.
+# DETACHED_PROCESS is not combined with it: Windows ignores CREATE_NO_WINDOW
+# when DETACHED_PROCESS is set, and the command prompt comes back.
+_CREATE_NO_WINDOW = 0x08000000
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
+_SW_HIDE = 0
 
 
 class AgentLaunchError(Exception):
@@ -75,10 +79,18 @@ def subprocess_env(base: dict[str, str] | None = None) -> dict[str, str]:
     return env
 
 
-def spawn_kwargs(os_name: str | None = None) -> dict[str, int | bool]:
-    """Detach ``serve`` so it keeps running after Fusion closes."""
+def spawn_kwargs(os_name: str | None = None) -> dict[str, int | bool | object]:
+    """Start ``fusion-agent`` with no command prompt, and keep ``serve`` alive."""
     if (os.name if os_name is None else os_name) == "nt":
-        return {"creationflags": _DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP}
+        kwargs: dict[str, int | bool | object] = {
+            "creationflags": _CREATE_NO_WINDOW | _CREATE_NEW_PROCESS_GROUP
+        }
+        if os.name == "nt":
+            info = subprocess.STARTUPINFO()
+            info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            info.wShowWindow = _SW_HIDE
+            kwargs["startupinfo"] = info
+        return kwargs
     return {"start_new_session": True}
 
 
@@ -162,6 +174,7 @@ def _run(
         text=True,
         timeout=timeout,
         env=subprocess_env(),
+        **spawn_kwargs(),
     )
     combined = "\n".join(
         part.strip() for part in (proc.stdout or "", proc.stderr or "") if part.strip()

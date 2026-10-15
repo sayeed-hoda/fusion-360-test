@@ -94,9 +94,7 @@ def test_a_rejected_key_does_not_start_serve(launch, monkeypatch, tmp_path: Path
         raise AssertionError("serve must not start")
 
     with pytest.raises(launch.AgentLaunchError, match="Refusing to pair") as raised:
-        launch.pair_and_start(
-            "TYM1.secret-value", run=fake_run, popen=fake_popen
-        )
+        launch.pair_and_start("TYM1.secret-value", run=fake_run, popen=fake_popen)
     assert calls == ["pair"]
     assert "secret-value" not in str(raised.value)
 
@@ -169,10 +167,11 @@ def test_project_venv_is_used_when_the_program_is_not_on_path(
     assert found == [str(venv_bin)]
 
 
-def test_windows_spawn_detaches_from_the_fusion_console(launch):
+def test_windows_spawn_hides_the_command_prompt(launch):
     flags = launch.spawn_kwargs("nt")["creationflags"]
-    assert flags & launch._DETACHED_PROCESS
+    assert flags & launch._CREATE_NO_WINDOW
     assert flags & launch._CREATE_NEW_PROCESS_GROUP
+    assert not (flags & 0x00000008)
     assert launch.spawn_kwargs("posix") == {"start_new_session": True}
 
 

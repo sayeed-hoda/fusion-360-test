@@ -1,4 +1,7 @@
-"""The gateway socket stays closed until the add-in answers. No socket to port 9876."""
+"""Tymeline waits for the add-in. The local REPL is dialed at once.
+
+No socket to port 9876.
+"""
 
 from __future__ import annotations
 
@@ -37,7 +40,7 @@ def test_websocket_stays_closed_while_fusion_is_down(monkeypatch: pytest.MonkeyP
     lines: list[str] = []
     service = _Status(connected=False)
     client = WsClient(
-        "ws://127.0.0.1:9/api/v1/integrations/plugin/connect",
+        "wss://gateway.tymeline.app/api/v1/integrations/plugin/connect",
         "super-secret-value",
         service=service,
         status=lines.append,
@@ -56,6 +59,66 @@ def test_websocket_stays_closed_while_fusion_is_down(monkeypatch: pytest.MonkeyP
         assert all("super-secret-value" not in line for line in lines)
     finally:
         client.stop()
+
+
+def test_local_repl_is_dialed_while_fusion_is_still_down(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+):
+    sent: list[str] = []
+
+    class FakeWS:
+        def __init__(self) -> None:
+            self._closed = asyncio.Event()
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            await self._closed.wait()
+            raise StopAsyncIteration
+
+        async def send(self, text: str) -> None:
+            sent.append(text)
+
+        async def close(self) -> None:
+            self._closed.set()
+
+    async def fake_connect(*_args, **_kwargs):
+        return FakeWS()
+
+    monkeypatch.setattr("fusion_agent.transport.ws_client.connect", fake_connect)
+    monkeypatch.setattr(
+        "fusion_agent.transport.device_id.device_id_path",
+        lambda: tmp_path / "device_id",
+    )
+    from fusion_agent.transport import device_id
+
+    device_id.reset_cache()
+    client = WsClient(
+        "ws://127.0.0.1:53117/api/v1/integrations/plugin/connect",
+        "super-secret-value",
+        service=_Status(connected=False),
+        status=lambda _line: None,
+        fusion_poll_s=30,
+    )
+    client.start()
+    try:
+        import time
+
+        for _ in range(40):
+            if sent:
+                break
+            time.sleep(0.05)
+        assert sent, "hello was not sent to the local REPL"
+        hello = json.loads(sent[0])
+        assert hello["event"] == "hello"
+        assert hello["payload"]["protocol_version"] == "agent_ws_v1"
+        assert hello["payload"]["device_id"]
+        assert "document" not in hello["payload"]
+        assert "super-secret-value" not in sent[0]
+    finally:
+        client.stop()
+        device_id.reset_cache()
 
 
 def test_websocket_opens_after_fusion_answers(

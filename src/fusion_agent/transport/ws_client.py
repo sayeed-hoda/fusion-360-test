@@ -7,6 +7,7 @@ import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus
@@ -26,6 +27,7 @@ from fusion_agent.transport.pairing import (
     UNTRUSTED_GATEWAY_USER_MESSAGE,
     is_hello_rejected,
     is_insecure_gateway,
+    is_loopback_host,
     is_trusted_gateway,
     is_unauthorized_failure,
 )
@@ -33,7 +35,8 @@ from fusion_agent.version import PLUGIN_VERSION
 from fusion_agent.wire import Envelope, dumps, omit_none
 
 # How often the daemon asks whether the add-in on port 9876 is up.
-# The gateway socket opens only after a successful check.
+# A Tymeline host is dialed only after that check. The local REPL is loopback,
+# so that socket opens immediately and the chat can leave its wait.
 FUSION_POLL_S = 20.0
 _LOG = logging.getLogger("fusion_agent.ws")
 
@@ -136,7 +139,7 @@ class WsClient:
             self._notify(UNTRUSTED_GATEWAY_USER_MESSAGE)
             return
         while not self._stop.is_set():
-            if not await self._wait_for_fusion():
+            if not self._is_local_repl() and not await self._wait_for_fusion():
                 break
             attempt = self._failed_attempts + 1
             stop_after = False
@@ -230,12 +233,14 @@ class WsClient:
         status = await asyncio.get_running_loop().run_in_executor(
             self._pool, self._addon_status
         )
-        if status is None:
+        if status is None and not self._is_local_repl():
             self._notify(
                 "[Agent] Fusion closed before hello. Waiting for the add-in again."
             )
             await self._close_ws(ws)
             return
+        if status is None:
+            status = {}
         try:
             await self._send(
                 {
@@ -245,7 +250,7 @@ class WsClient:
                 }
             )
             with self._lock:
-                self._fusion_up = True
+                self._fusion_up = bool(status.get("connected"))
             watch = asyncio.create_task(self._watch_fusion())
             try:
                 await self._receive_loop(ws)
@@ -404,6 +409,10 @@ class WsClient:
             return True
         except asyncio.TimeoutError:
             return False
+
+    def _is_local_repl(self) -> bool:
+        """True when the key points at this machine. That host is the chat."""
+        return is_loopback_host(urlparse(self._gateway_url).hostname or "")
 
     def _addon_status(self) -> dict[str, Any] | None:
         try:
