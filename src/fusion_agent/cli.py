@@ -8,6 +8,7 @@ import os
 import signal
 import sys
 import threading
+import time
 
 from fusion_agent.transport import paths
 from fusion_agent.transport.pairing import (
@@ -150,6 +151,33 @@ def cmd_unpair() -> int:
     return 0
 
 
+def cmd_stop() -> int:
+    """Stop a running serve process. The pairing file stays."""
+    pid = _read_pid()
+    if pid is None or not _pid_alive(pid):
+        path = paths.pid_path()
+        if path.is_file():
+            try:
+                path.unlink()
+            except OSError:
+                pass
+        print("[Agent] Not running.", flush=True)
+        return 0
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError as exc:
+        print(f"[Agent] Could not stop pid {pid}: {exc}", flush=True)
+        return 1
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if not _pid_alive(pid):
+            print(f"[Agent] Stopped (pid {pid}).", flush=True)
+            return 0
+        time.sleep(0.05)
+    print(f"[Agent] Still running (pid {pid}).", flush=True)
+    return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="fusion-agent",
@@ -162,6 +190,7 @@ def build_parser() -> argparse.ArgumentParser:
     pair = sub.add_parser("pair", help="store a TYM1 pairing token")
     pair.add_argument("token")
     sub.add_parser("unpair", help="forget the stored pairing token")
+    sub.add_parser("stop", help="stop the running connection")
     sub.add_parser(
         "repl",
         help="chat with GLM against the local Fusion add-in (needs GLM_API_KEY)",
@@ -177,6 +206,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_pair(args.token)
     if args.command == "unpair":
         return cmd_unpair()
+    if args.command == "stop":
+        return cmd_stop()
     if args.command == "repl":
         from fusion_agent.repl import main as repl_main
 

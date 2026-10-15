@@ -5,12 +5,14 @@ from __future__ import annotations
 import base64
 import json
 import os
-from pathlib import Path
+import signal
+import sys
+from pathlib import Path, PosixPath
 
 import pytest
 
-from fusion_agent.cli import cmd_pair, cmd_serve, cmd_unpair, open_serve
-from fusion_agent.transport import device_id, pairing
+from fusion_agent.cli import cmd_pair, cmd_serve, cmd_stop, cmd_unpair, open_serve
+from fusion_agent.transport import device_id, pairing, paths
 
 
 def _token(
@@ -49,7 +51,8 @@ def test_pair_writes_token_and_does_not_print_the_secret(isolated_config, capsys
     stored = json.loads(pairing_file.read_text(encoding="utf-8"))
     assert stored["secret"] == secret
     assert stored["token_id"] == "tok_1"
-    assert pairing_file.stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert pairing_file.stat().st_mode & 0o777 == 0o600
 
 
 def test_pair_refuses_an_untrusted_host(isolated_config, capsys):
@@ -137,6 +140,154 @@ def test_second_serve_does_not_start(isolated_config, monkeypatch, capsys):
     assert client is None
     assert code == 1
     assert "Already running" in captured.out
+
+
+def _pin_home(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
+    """Point Path.home at a temp directory and clear config env vars.
+
+    pathlib 3.13+ builds a WindowsPath when os.name is ``nt``. Those objects
+    cannot be joined on Linux, so the tests keep the host path class while
+    config_root still reads os.name.
+    """
+    home.mkdir(parents=True, exist_ok=True)
+    if os.name != "nt":
+        monkeypatch.setattr(paths, "Path", PosixPath)
+    monkeypatch.setattr(paths.Path, "home", lambda: home)
+    monkeypatch.delenv("FUSION_AGENT_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+
+
+def test_config_root_on_windows_uses_appdata(monkeypatch, tmp_path: Path):
+    home = tmp_path / "home"
+    appdata = tmp_path / "Roaming"
+    _pin_home(monkeypatch, home)
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("APPDATA", str(appdata))
+    assert paths.config_root() == appdata / "tymeline-fusion360"
+
+
+def test_config_root_on_windows_falls_back_when_appdata_is_missing(
+    monkeypatch, tmp_path: Path
+):
+    home = tmp_path / "home"
+    _pin_home(monkeypatch, home)
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert paths.config_root() == home / "AppData" / "Roaming" / "tymeline-fusion360"
+
+
+def test_config_root_on_macos_uses_application_support(monkeypatch, tmp_path: Path):
+    home = tmp_path / "home"
+    _pin_home(monkeypatch, home)
+    monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert (
+        paths.config_root()
+        == home / "Library" / "Application Support" / "tymeline-fusion360"
+    )
+
+
+def test_config_root_on_linux_uses_xdg_or_dot_config(monkeypatch, tmp_path: Path):
+    home = tmp_path / "home"
+    xdg = tmp_path / "xdg"
+    _pin_home(monkeypatch, home)
+    monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.setattr(sys, "platform", "linux")
+    legacy = home / ".config" / "tymeline-fusion360"
+    legacy.mkdir(parents=True)
+    (legacy / "pairing.json").write_text("old\n", encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    assert paths.config_root() == xdg / "tymeline-fusion360"
+    assert not (xdg / "tymeline-fusion360" / "pairing.json").exists()
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+    assert paths.config_root() == home / ".config" / "tymeline-fusion360"
+
+
+def test_config_root_override_wins_over_the_os_folder(monkeypatch, tmp_path: Path):
+    home = tmp_path / "home"
+    appdata = tmp_path / "Roaming"
+    override = tmp_path / "override"
+    _pin_home(monkeypatch, home)
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("APPDATA", str(appdata))
+    monkeypatch.setenv("FUSION_AGENT_CONFIG_DIR", str(override))
+    assert paths.config_root() == override
+
+
+def test_legacy_pairing_is_copied_when_the_new_file_is_missing(
+    monkeypatch, tmp_path: Path
+):
+    home = tmp_path / "home"
+    appdata = tmp_path / "Roaming"
+    _pin_home(monkeypatch, home)
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("APPDATA", str(appdata))
+    legacy = home / ".config" / "tymeline-fusion360"
+    legacy.mkdir(parents=True)
+    (legacy / "pairing.json").write_text('{"secret":"kept"}\n', encoding="utf-8")
+    (legacy / "device_id").write_text("dev-1\n", encoding="utf-8")
+    (legacy / "agent.pid").write_text("99\n", encoding="utf-8")
+
+    root = paths.config_root()
+    assert (root / "pairing.json").read_text(encoding="utf-8") == '{"secret":"kept"}\n'
+    assert (root / "device_id").read_text(encoding="utf-8") == "dev-1\n"
+    assert not (root / "agent.pid").exists()
+    assert (legacy / "pairing.json").is_file()
+    assert (legacy / "device_id").is_file()
+    assert (legacy / "agent.pid").is_file()
+
+    (legacy / "pairing.json").write_text("changed\n", encoding="utf-8")
+    paths.config_root()
+    assert (root / "pairing.json").read_text(encoding="utf-8") == '{"secret":"kept"}\n'
+
+
+def test_legacy_pairing_is_not_copied_when_the_override_is_set(
+    monkeypatch, tmp_path: Path
+):
+    home = tmp_path / "home"
+    appdata = tmp_path / "Roaming"
+    override = tmp_path / "override"
+    _pin_home(monkeypatch, home)
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("APPDATA", str(appdata))
+    legacy = home / ".config" / "tymeline-fusion360"
+    legacy.mkdir(parents=True)
+    (legacy / "pairing.json").write_text('{"secret":"kept"}\n', encoding="utf-8")
+    monkeypatch.setenv("FUSION_AGENT_CONFIG_DIR", str(override))
+
+    assert paths.config_root() == override
+    assert not (override / "pairing.json").exists()
+    assert not (appdata / "tymeline-fusion360" / "pairing.json").exists()
+    assert (legacy / "pairing.json").is_file()
+
+
+def test_stop_reports_when_nothing_is_running(isolated_config, capsys):
+    code = cmd_stop()
+    assert code == 0
+    assert "Not running" in capsys.readouterr().out
+
+
+def test_stop_signals_a_running_agent(isolated_config, monkeypatch):
+    _pairing_file, pid_file = isolated_config
+    pid_file.write_text("4242\n", encoding="utf-8")
+    killed: list[int] = []
+
+    def alive(pid: int) -> bool:
+        return pid not in killed
+
+    def fake_kill(pid: int, sig: int) -> None:
+        assert sig == signal.SIGTERM
+        killed.append(pid)
+
+    monkeypatch.setattr("fusion_agent.cli._pid_alive", alive)
+    monkeypatch.setattr("fusion_agent.cli.os.kill", fake_kill)
+    assert cmd_stop() == 0
+    assert killed == [4242]
 
 
 def test_device_id_is_reused_and_survives_a_missing_directory(tmp_path: Path):

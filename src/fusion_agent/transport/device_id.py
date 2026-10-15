@@ -1,4 +1,9 @@
-"""Stable per-install device id at ~/.config/tymeline-fusion360/device_id."""
+"""Stable per-install device id, stored as ``device_id`` beside ``pairing.json``.
+
+Windows: ``%APPDATA%\\tymeline-fusion360``.
+macOS: ``~/Library/Application Support/tymeline-fusion360``.
+Linux: ``$XDG_CONFIG_HOME/tymeline-fusion360`` or ``~/.config/tymeline-fusion360``.
+"""
 
 from __future__ import annotations
 

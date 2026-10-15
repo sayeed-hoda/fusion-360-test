@@ -2,7 +2,8 @@
 
 A token is base64, not a signature: anyone holding one can rewrite the URL.
 ``is_trusted_gateway`` is the check that runs before the secret is sent.
-The pairing file is mode 0600.
+On macOS and Linux the pairing file is mode 0600. On Windows the user
+profile is the privacy boundary; chmod does not mean the same thing.
 """
 
 from __future__ import annotations
