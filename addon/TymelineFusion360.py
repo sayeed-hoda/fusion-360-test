@@ -96,6 +96,21 @@ def _install_pairing_button() -> None:
             traceback.print_exc()
 
 
+def _stop_tymeline_connection() -> None:
+    """Stop the daemon started by Pair while keeping the saved pairing."""
+    try:
+        from .server.agent_launch import stop_connection
+
+        message = stop_connection()
+        if _log:
+            _log.info("%s", message)
+    except Exception:
+        if _log:
+            _log.exception("Tymeline connection did not stop with the add-in")
+        else:
+            traceback.print_exc()
+
+
 def stop(context):
     global _app, _ui, _bridge, _server, _handler, _log, _repl_stop, _repl_thread
 
@@ -107,6 +122,7 @@ def stop(context):
         remove(_ui)
     except Exception:
         traceback.print_exc()
+    _stop_tymeline_connection()
     try:
         if _server:
             _server.stop()

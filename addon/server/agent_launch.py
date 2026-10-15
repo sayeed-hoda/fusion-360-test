@@ -170,6 +170,23 @@ def connection_status(
     )
 
 
+def stop_connection(
+    *,
+    start: Path | None = None,
+    run: object | None = None,
+) -> str:
+    """Stop the detached Tymeline daemon without deleting its pairing key."""
+    command = _require_command(start)
+    runner = run if run is not None else subprocess.run
+    return _run(
+        runner,
+        [*command, "stop"],
+        "",
+        timeout=10,
+        failure="Could not stop the Tymeline connection.",
+    )
+
+
 def _require_command(start: Path | None) -> list[str]:
     command = agent_command(start)
     if command is None:

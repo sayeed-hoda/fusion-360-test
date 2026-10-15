@@ -158,6 +158,24 @@ def test_connection_status_uses_the_agent_command(
     assert calls[0][-1] == "status"
 
 
+def test_stop_connection_keeps_pairing_and_stops_the_daemon(
+    launch, monkeypatch, tmp_path: Path
+):
+    program = _bin(tmp_path)
+    monkeypatch.setenv("FUSION_AGENT_BIN", str(program))
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **_kwargs):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(
+            argv, 0, stdout="[Agent] Stopped (pid 42).\n"
+        )
+
+    message = launch.stop_connection(run=fake_run)
+    assert message == "[Agent] Stopped (pid 42)."
+    assert calls == [[str(program), "stop"]]
+
+
 def test_missing_program_is_reported(launch, monkeypatch, tmp_path: Path):
     monkeypatch.delenv("FUSION_AGENT_BIN", raising=False)
     monkeypatch.delenv("FUSION_AGENT_PROJECT", raising=False)
@@ -207,6 +225,8 @@ def test_the_add_in_does_not_choose_the_pairing_folder():
     assert "Paste the TYM1 pairing key" in button_text
     assert "_LOGO_FOLDER" in button_text
     assert "_install_pairing_button" in addin_text
+    assert "_stop_tymeline_connection()" in addin_text
+    assert "stop_connection" in addin_text
 
 
 def test_toolbar_logo_matches_fusion_icon_sizes():
