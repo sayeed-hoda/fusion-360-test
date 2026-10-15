@@ -12,7 +12,6 @@ this on a trusted LAN — the socket has no authentication.
 """
 
 import os
-import threading
 import traceback
 
 import adsk.core
@@ -25,8 +24,6 @@ _bridge = None
 _server = None
 _handler = None
 _log = None
-_repl_stop = None
-_repl_thread = None
 
 
 def run(context):
@@ -51,7 +48,7 @@ def run(context):
         _bridge = EventBridge(_app, _handler)
         _server = Fusion360MCPServer(_bridge, host=host, port=port)
         _server.start()
-        _start_repl_announce(port)
+        _start_tymeline_connection()
         _install_pairing_button()
 
         _log.info("TymelineFusion360 loaded - server on %s:%s  (log: %s)",
@@ -67,20 +64,19 @@ def run(context):
         print(f"Tymeline Fusion 360 startup error:\n{msg}")
 
 
-def _start_repl_announce(command_port: int) -> None:
-    """Dial the chat on 127.0.0.1:9877. The chat is already waiting."""
-    global _repl_stop, _repl_thread
+def _start_tymeline_connection() -> None:
+    """Start the saved cloud or local WebSocket pairing with the add-in."""
+    try:
+        from .server.agent_launch import start_connection
 
-    from .server.repl_announce import announce_until_heard
-
-    _repl_stop = threading.Event()
-    _repl_thread = threading.Thread(
-        target=announce_until_heard,
-        args=(command_port, _repl_stop),
-        name="fusion-repl-announce",
-        daemon=True,
-    )
-    _repl_thread.start()
+        message = start_connection()
+        if _log:
+            _log.info("%s", message)
+    except Exception:
+        if _log:
+            _log.exception("Tymeline connection did not start with the add-in")
+        else:
+            traceback.print_exc()
 
 
 def _install_pairing_button() -> None:
@@ -112,10 +108,7 @@ def _stop_tymeline_connection() -> None:
 
 
 def stop(context):
-    global _app, _ui, _bridge, _server, _handler, _log, _repl_stop, _repl_thread
-
-    if _repl_stop is not None:
-        _repl_stop.set()
+    global _app, _ui, _bridge, _server, _handler, _log
     try:
         from .server.pairing_button import remove
 

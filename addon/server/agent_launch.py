@@ -170,6 +170,17 @@ def connection_status(
     )
 
 
+def start_connection(
+    *,
+    start: Path | None = None,
+    popen: object | None = None,
+    log_file: Path | None = None,
+) -> str:
+    """Start the daemon with the saved pairing key, if one exists."""
+    command = _require_command(start)
+    return _start_serve(command, "", popen=popen, log_file=log_file)
+
+
 def stop_connection(
     *,
     start: Path | None = None,

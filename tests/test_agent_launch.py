@@ -158,6 +158,24 @@ def test_connection_status_uses_the_agent_command(
     assert calls[0][-1] == "status"
 
 
+def test_start_connection_launches_serve_with_saved_pairing(
+    launch, monkeypatch, tmp_path: Path
+):
+    program = _bin(tmp_path)
+    monkeypatch.setenv("FUSION_AGENT_BIN", str(program))
+    spawned: dict = {}
+
+    def fake_popen(argv, **kwargs):
+        spawned["argv"] = list(argv)
+        spawned["kwargs"] = kwargs
+        return object()
+
+    message = launch.start_connection(popen=fake_popen, log_file=tmp_path / "agent.log")
+    assert message == "Tymeline connection is starting."
+    assert spawned["argv"] == [str(program), "serve"]
+    assert spawned["kwargs"]["start_new_session"] is True
+
+
 def test_stop_connection_keeps_pairing_and_stops_the_daemon(
     launch, monkeypatch, tmp_path: Path
 ):
@@ -225,8 +243,11 @@ def test_the_add_in_does_not_choose_the_pairing_folder():
     assert "Paste the TYM1 pairing key" in button_text
     assert "_LOGO_FOLDER" in button_text
     assert "_install_pairing_button" in addin_text
+    assert "_start_tymeline_connection()" in addin_text
     assert "_stop_tymeline_connection()" in addin_text
+    assert "start_connection" in addin_text
     assert "stop_connection" in addin_text
+    assert "_start_repl_announce" not in addin_text
 
 
 def test_toolbar_logo_matches_fusion_icon_sizes():
