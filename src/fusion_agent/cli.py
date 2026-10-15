@@ -160,7 +160,9 @@ def open_serve() -> tuple[object | None, int]:
     from fusion_agent.transport.ws_client import WsClient
 
     service = CommandService()
-    print(f"[Agent] WebSocket enabled ({cfg.source}) → {cfg.url}", flush=True)
+    # Keep daemon output ASCII: Fusion redirects this stream on Windows, where
+    # Python may select cp1252 instead of UTF-8.
+    print(f"[Agent] WebSocket enabled ({cfg.source}) -> {cfg.url}", flush=True)
     client = WsClient(cfg.url, cfg.secret, token_id=cfg.token_id, service=service)
     client.start()
     _write_pid()

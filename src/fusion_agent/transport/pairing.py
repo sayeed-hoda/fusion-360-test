@@ -26,7 +26,7 @@ PROTOCOL_VERSION = "agent_ws_v1"
 TOKEN_PREFIX = "TYM1."
 
 UNAUTHORIZED_USER_MESSAGE = (
-    "[Agent] Pairing rejected — the token is invalid, revoked or expired. "
+    "[Agent] Pairing rejected - the token is invalid, revoked or expired. "
     "Generate a new one in Tymeline and run fusion-agent pair."
 )
 UNTRUSTED_GATEWAY_USER_MESSAGE = (
@@ -34,7 +34,7 @@ UNTRUSTED_GATEWAY_USER_MESSAGE = (
     "Get a fresh token from Tymeline rather than from anyone else."
 )
 HELLO_REJECTED_USER_MESSAGE = (
-    "[Agent] Connected but hello rejected — "
+    "[Agent] Connected but hello rejected - "
     "send protocol_version and device_id in hello."
 )
 INSECURE_GATEWAY_USER_MESSAGE = (
@@ -80,7 +80,7 @@ def parse_pairing_token(raw: str | None) -> PairingToken:
         raise ValueError("Pairing token is empty.")
     if not trimmed.startswith(TOKEN_PREFIX):
         raise ValueError(
-            "Pairing token must start with TYM1. — copy the whole token from Tymeline."
+            "Pairing token must start with TYM1. - copy the whole token from Tymeline."
         )
     payload = trimmed[len(TOKEN_PREFIX) :]
     if not payload:
@@ -101,7 +101,7 @@ def parse_pairing_token(raw: str | None) -> PairingToken:
     display = _read_string(data, "display")
     if not url or not token_id or not secret:
         raise ValueError(
-            "Pairing token is incomplete — generate a new one in Tymeline."
+            "Pairing token is incomplete - generate a new one in Tymeline."
         )
     return PairingToken(url=url, token_id=token_id, secret=secret, display=display)
 
@@ -127,7 +127,7 @@ def normalize_gateway_url(raw: str) -> str:
         )
     if parsed.query or parsed.fragment:
         raise ValueError(
-            "Gateway URL must not contain a query string or fragment — "
+            "Gateway URL must not contain a query string or fragment - "
             "the pairing secret travels in a header, never in the URL."
         )
     path = parsed.path.rstrip("/")

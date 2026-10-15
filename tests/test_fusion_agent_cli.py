@@ -136,6 +136,7 @@ def test_serve_starts_from_a_trusted_env_pair(isolated_config, monkeypatch, caps
         assert started["url"].endswith("/api/v1/integrations/plugin/connect")
         assert started["secret"] == "super-secret-value"
         assert "super-secret-value" not in captured.out
+        assert captured.out.isascii()
         assert pid_file.read_text(encoding="utf-8").strip() == str(os.getpid())
     finally:
         if client is not None:

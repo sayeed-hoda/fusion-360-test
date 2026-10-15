@@ -160,7 +160,7 @@ class WsClient:
             stop_after = False
             try:
                 if attempt <= QUIET_AFTER_ATTEMPTS:
-                    self._notify(f"[Agent] Connecting to {self._gateway_url} …")
+                    self._notify(f"[Agent] Connecting to {self._gateway_url} ...")
                 if not self._insecure_warned and is_insecure_gateway(self._gateway_url):
                     self._insecure_warned = True
                     self._notify(INSECURE_GATEWAY_USER_MESSAGE)
@@ -213,7 +213,7 @@ class WsClient:
                 break
             delay = backoff_seconds(self._failed_attempts)
             if self._failed_attempts <= QUIET_AFTER_ATTEMPTS:
-                self._notify(f"[Agent] Reconnecting in {delay}s …")
+                self._notify(f"[Agent] Reconnecting in {delay}s ...")
             try:
                 assert self._stop_async is not None
                 await asyncio.wait_for(self._stop_async.wait(), timeout=delay)
