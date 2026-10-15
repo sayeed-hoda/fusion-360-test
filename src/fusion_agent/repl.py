@@ -538,42 +538,44 @@ def main(
         write(MISSING_KEY_MESSAGE)
         return 1
     fusion_link = None
+    status_api = None
     owns_listener = service is None and link is None
     if service is None:
         fusion_link = link
         if fusion_link is None:
+            from fusion_agent.cli import _write_repl_pid, clear_repl_process
             from fusion_agent.repl_link import FusionReplLink
+            from fusion_agent.status_api import ConnectionStatusServer
 
-            def publish(connected: bool) -> None:
-                current = fusion_link
-                target = current.url if current is not None else ""
-                note_repl_listener(target, connected=connected)
-
-            from fusion_agent.cli import clear_repl_listener, note_repl_listener
-
-            fusion_link = FusionReplLink(status=write, on_change=publish)
+            fusion_link = FusionReplLink(status=write)
             try:
                 fusion_link.start()
+                status_api = ConnectionStatusServer(
+                    lambda: bool(
+                        fusion_link.connection_info().get("websocket_connected")
+                    )
+                )
+                status_api.start()
+                _write_repl_pid()
             except OSError as exc:
-                write(f"Could not listen for Fusion: {exc}")
+                write(f"Could not start the Fusion connection server: {exc}")
+                if status_api is not None:
+                    status_api.stop()
                 fusion_link.stop()
-                clear_repl_listener()
+                clear_repl_process()
                 return 1
-            snapshot = fusion_link.connection_info()
-            note_repl_listener(
-                str(snapshot.get("url") or fusion_link.url),
-                connected=bool(snapshot.get("websocket_connected")),
-            )
         write(WAITING_SOCKET_MESSAGE.format(url=fusion_link.url))
         try:
             hello = fusion_link.wait_for_hello()
         except KeyboardInterrupt:
             write("")
+            if status_api is not None:
+                status_api.stop()
             fusion_link.stop()
             if owns_listener:
-                from fusion_agent.cli import clear_repl_listener
+                from fusion_agent.cli import clear_repl_process
 
-                clear_repl_listener()
+                clear_repl_process()
             return 0
         document = hello.get("document") if isinstance(hello, dict) else None
         if isinstance(document, str) and document:
@@ -604,10 +606,12 @@ def main(
     except KeyboardInterrupt:
         write("")
     finally:
+        if status_api is not None:
+            status_api.stop()
         if fusion_link is not None:
             fusion_link.stop()
         if owns_listener:
-            from fusion_agent.cli import clear_repl_listener
+            from fusion_agent.cli import clear_repl_process
 
-            clear_repl_listener()
+            clear_repl_process()
     return 0

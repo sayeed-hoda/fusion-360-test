@@ -7,9 +7,12 @@ folder: ``pair`` writes the key, and ``serve`` reads that same file.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 # Fusion's embedded interpreter must not become the daemon's Python.
@@ -30,6 +33,7 @@ _PYTHON_ENV_KEYS = (
 _CREATE_NO_WINDOW = 0x08000000
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 _SW_HIDE = 0
+_STATUS_PORT = 41829
 
 
 class AgentLaunchError(Exception):
@@ -178,16 +182,24 @@ def connection_status(
     start: Path | None = None,
     run: object | None = None,
 ) -> str:
-    """Return the daemon's safe, user-facing connection status."""
-    command = _require_command(start)
-    runner = run if run is not None else subprocess.run
-    return _run(
-        runner,
-        [*command, "status"],
-        "",
-        timeout=10,
-        failure="Could not read the Tymeline connection status.",
-    )
+    """Ask the live loopback API and return only connected or not connected."""
+    del start, run
+    raw_port = os.environ.get("FUSION_AGENT_HTTP_PORT", str(_STATUS_PORT)).strip()
+    try:
+        port = int(raw_port)
+    except ValueError:
+        port = _STATUS_PORT
+    if port <= 0 or port > 65535:
+        port = _STATUS_PORT
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/status", timeout=1.0
+        ) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError, urllib.error.URLError):
+        return "Not connected."
+    connected = isinstance(payload, dict) and payload.get("connected") is True
+    return "Connected." if connected else "Not connected."
 
 
 def start_connection(

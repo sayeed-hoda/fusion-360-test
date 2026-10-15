@@ -18,7 +18,7 @@ CONFIG_DIR_ENV = "FUSION_AGENT_CONFIG_DIR"
 # Add-in TCP listener. The daemon does not bind this port.
 ADDON_HOST = "127.0.0.1"
 ADDON_PORT = 9876
-# Reserved for a later loopback HTTP page. Unused.
+# Loopback API that reports only whether the active WebSocket is connected.
 HTTP_PORT = 41829
 # Default Tymeline WebSocket port when a pairing URL has no port.
 WS_PORT = 53117
@@ -93,16 +93,6 @@ def pid_path() -> Path:
     return config_root() / "agent.pid"
 
 
-def status_path() -> Path:
-    """Daemon connection state. This file never contains the pairing secret."""
-    return config_root() / "status.json"
-
-
 def repl_pid_path() -> Path:
     """Process id of ``fusion-agent repl``, the local WebSocket server."""
     return config_root() / "repl.pid"
-
-
-def repl_status_path() -> Path:
-    """REPL listener state. This file never contains the pairing secret."""
-    return config_root() / "repl-status.json"

@@ -21,6 +21,10 @@ log = get_logger("socket")
 
 _RESTART_DELAY = 2.0  # seconds before rebinding after socket error
 _MAX_RESTARTS = 10  # consecutive restart cap before giving up
+# Answered on the socket thread. It must not be queued onto Fusion's main
+# thread: the toolbar status check calls it while that thread is waiting.
+TYMELINE_STATUS = "tymeline_status"
+STATUS_SCHEMA = "tymeline_status_v1"
 
 
 class Fusion360MCPServer:
@@ -89,6 +93,9 @@ class Fusion360MCPServer:
             s.bind((self.host, self.port))
             s.listen(5)
             self._socket = s
+            bound_port = s.getsockname()[1]
+            if isinstance(bound_port, int) and bound_port > 0:
+                self.port = bound_port
             log.info("Server listening on %s:%s", self.host, self.port)
             return True
         except Exception as exc:
@@ -217,8 +224,24 @@ class Fusion360MCPServer:
     # Helpers
     # ------------------------------------------------------------------
 
+    def status_result(self) -> dict:
+        """Live add-in state. This does not call the Fusion API."""
+        with self._clients_lock:
+            client_count = len(self._clients)
+        return {
+            "ok": True,
+            "schema": STATUS_SCHEMA,
+            "listening": bool(self._running and self._socket is not None),
+            "host": self.host,
+            "port": self.port,
+            "client_count": client_count,
+        }
+
     def _dispatch(self, client, command):
         """Submit command to bridge and send response back to client."""
+        if command.get("type") == TYMELINE_STATUS:
+            self._send(client, {"status": "success", "result": self.status_result()})
+            return
         try:
             response = self._bridge.submit(command)
         except Exception as exc:

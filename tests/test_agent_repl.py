@@ -336,10 +336,9 @@ def test_default_repl_listens_and_waits_for_fusion_to_initiate_websocket(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
     monkeypatch.setenv("GLM_API_KEY", "glm-secret-key")
+    monkeypatch.setenv("FUSION_AGENT_HTTP_PORT", "0")
     repl_pid = tmp_path / "repl.pid"
-    repl_status = tmp_path / "repl-status.json"
     monkeypatch.setattr("fusion_agent.cli.paths.repl_pid_path", lambda: repl_pid)
-    monkeypatch.setattr("fusion_agent.cli.paths.repl_status_path", lambda: repl_status)
 
     class Link:
         url = "ws://127.0.0.1:53117/api/v1/integrations/plugin/connect"
@@ -383,7 +382,6 @@ def test_default_repl_listens_and_waits_for_fusion_to_initiate_websocket(
     assert "fusion agent ready" in joined
     assert "click Pair in Fusion" in joined
     assert not repl_pid.exists()
-    assert not repl_status.exists()
 
 
 def test_wait_keeps_polling_when_status_raises():

@@ -141,21 +141,35 @@ def test_unpair_when_nothing_was_stored(launch, monkeypatch, tmp_path: Path):
     assert launch.unpair(run=fake_run) == "Tymeline was not paired."
 
 
-def test_connection_status_uses_the_agent_command(
-    launch, monkeypatch, tmp_path: Path
-):
-    monkeypatch.setenv("FUSION_AGENT_BIN", str(_bin(tmp_path)))
-    calls: list[list[str]] = []
+def test_connection_status_uses_the_live_http_api(launch, monkeypatch):
+    class Response:
+        def __enter__(self):
+            return self
 
-    def fake_run(argv, **_kwargs):
-        calls.append(list(argv))
-        return subprocess.CompletedProcess(
-            argv, 0, stdout="Tymeline is connected. Fusion is connected.\n"
-        )
+        def __exit__(self, *_args):
+            return False
 
-    message = launch.connection_status(run=fake_run)
-    assert message == "Tymeline is connected. Fusion is connected."
-    assert calls[0][-1] == "status"
+        def read(self):
+            return b'{"connected":true}'
+
+    seen: list[str] = []
+
+    def fake_open(url, timeout):
+        seen.append(url)
+        assert timeout == 1.0
+        return Response()
+
+    monkeypatch.setattr(launch.urllib.request, "urlopen", fake_open)
+    assert launch.connection_status() == "Connected."
+    assert seen == ["http://127.0.0.1:41829/status"]
+
+
+def test_connection_status_is_not_connected_when_api_is_absent(launch, monkeypatch):
+    def unavailable(*_args, **_kwargs):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(launch.urllib.request, "urlopen", unavailable)
+    assert launch.connection_status() == "Not connected."
 
 
 def test_start_connection_launches_serve_with_saved_pairing(
