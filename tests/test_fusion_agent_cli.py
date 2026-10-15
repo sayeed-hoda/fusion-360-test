@@ -12,6 +12,7 @@ from pathlib import Path, PosixPath
 import pytest
 
 from fusion_agent.cli import (
+    _remember_cli_executable,
     _write_status,
     cmd_pair,
     cmd_serve,
@@ -31,6 +32,18 @@ def _token(
     ).encode()
     payload = base64.urlsafe_b64encode(raw).decode().rstrip("=")
     return "TYM1." + payload
+
+
+def test_repl_records_the_resolved_cli_for_the_fusion_addin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    program = tmp_path / "fusion-agent.exe"
+    program.write_bytes(b"launcher")
+    hint = tmp_path / ".tymeline-fusion-agent"
+    monkeypatch.setattr(sys, "argv", [str(program), "repl"])
+    monkeypatch.setattr(paths, "launcher_hint_path", lambda: hint)
+    _remember_cli_executable()
+    assert hint.read_text(encoding="utf-8") == str(program.resolve())
 
 
 @pytest.fixture

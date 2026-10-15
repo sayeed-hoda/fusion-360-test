@@ -51,24 +51,44 @@ def project_root(start: Path | None = None) -> Path | None:
 def agent_command(start: Path | None = None) -> list[str] | None:
     """Argv up to, but not including, ``pair`` / ``serve`` / ``stop``."""
     env_bin = os.environ.get("FUSION_AGENT_BIN", "").strip()
-    if env_bin and os.access(env_bin, os.X_OK):
+    if env_bin and _is_runnable(Path(env_bin)):
         return [env_bin]
     found = shutil.which("fusion-agent")
     if found:
         return [found]
     root = project_root(start)
-    if root is None:
-        return None
-    if os.name == "nt":
-        venv_bin = root / ".venv" / "Scripts" / "fusion-agent.exe"
-    else:
-        venv_bin = root / ".venv" / "bin" / "fusion-agent"
-    if os.access(venv_bin, os.X_OK):
-        return [str(venv_bin)]
+    if root is not None:
+        if os.name == "nt":
+            venv_bin = root / ".venv" / "Scripts" / "fusion-agent.exe"
+        else:
+            venv_bin = root / ".venv" / "bin" / "fusion-agent"
+        if _is_runnable(venv_bin):
+            return [str(venv_bin)]
+    remembered = _remembered_agent()
+    if remembered is not None:
+        return [str(remembered)]
     uv = shutil.which("uv")
-    if uv is not None and (root / "pyproject.toml").is_file():
+    if root is not None and uv is not None and (root / "pyproject.toml").is_file():
         return [uv, "run", "--project", str(root), "fusion-agent"]
     return None
+
+
+def _remembered_agent() -> Path | None:
+    """Executable last recorded by ``uv run fusion-agent repl``."""
+    hint = Path.home() / ".tymeline-fusion-agent"
+    try:
+        candidate = Path(hint.read_text(encoding="utf-8").strip())
+    except OSError:
+        return None
+    if "fusion-agent" not in candidate.name.lower() or not _is_runnable(candidate):
+        return None
+    return candidate
+
+
+def _is_runnable(path: Path) -> bool:
+    if os.name == "nt":
+        return path.is_file()
+    return os.access(path, os.X_OK)
 
 
 def subprocess_env(base: dict[str, str] | None = None) -> dict[str, str]:

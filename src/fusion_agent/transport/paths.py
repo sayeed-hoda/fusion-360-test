@@ -24,6 +24,11 @@ HTTP_PORT = 41829
 WS_PORT = 53117
 
 
+def launcher_hint_path() -> Path:
+    """Path shared with the add-in so it can find this CLI after ``uv run``."""
+    return Path.home() / ".tymeline-fusion-agent"
+
+
 def config_root() -> Path:
     """Per-user folder for pairing.json, device_id, and agent.pid."""
     override = os.environ.get(CONFIG_DIR_ENV, "").strip()

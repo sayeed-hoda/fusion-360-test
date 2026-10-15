@@ -6,10 +6,12 @@ import argparse
 import json
 import logging
 import os
+import shutil
 import signal
 import sys
 import threading
 import time
+from pathlib import Path
 
 from fusion_agent.transport import paths
 from fusion_agent.transport.pairing import (
@@ -30,6 +32,21 @@ NOT_PAIRED_MESSAGE = (
     "[Agent] Not paired. Set FUSION_AGENT_GATEWAY and FUSION_AGENT_TOKEN, "
     "or run fusion-agent pair."
 )
+
+
+def _remember_cli_executable() -> None:
+    """Let a copied Fusion add-in find the CLI that ``uv run`` resolved."""
+    raw = shutil.which(sys.argv[0]) or sys.argv[0]
+    candidate = Path(raw).resolve()
+    if not candidate.is_file() or "fusion-agent" not in candidate.name.lower():
+        return
+    destination = paths.launcher_hint_path()
+    try:
+        temporary = destination.with_suffix(".tmp")
+        temporary.write_text(str(candidate), encoding="utf-8")
+        os.replace(temporary, destination)
+    except OSError:
+        pass
 
 
 def _pid_alive(pid: int) -> bool:
@@ -275,6 +292,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "status":
         return cmd_status()
     if args.command == "repl":
+        _remember_cli_executable()
         from fusion_agent.repl import main as repl_main
 
         return repl_main()

@@ -198,8 +198,23 @@ def test_missing_program_is_reported(launch, monkeypatch, tmp_path: Path):
     monkeypatch.delenv("FUSION_AGENT_BIN", raising=False)
     monkeypatch.delenv("FUSION_AGENT_PROJECT", raising=False)
     monkeypatch.setattr(launch.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(launch, "_remembered_agent", lambda: None)
     with pytest.raises(launch.AgentLaunchError, match="FUSION_AGENT_BIN"):
         launch.pair_and_start("TYM1.abc", start=tmp_path / "outside")
+
+
+def test_remembered_repl_executable_is_used_for_a_copied_addin(
+    launch, monkeypatch, tmp_path: Path
+):
+    monkeypatch.delenv("FUSION_AGENT_BIN", raising=False)
+    monkeypatch.delenv("FUSION_AGENT_PROJECT", raising=False)
+    monkeypatch.setattr(launch.shutil, "which", lambda _name: None)
+    program = _bin(tmp_path)
+    hint = tmp_path / ".tymeline-fusion-agent"
+    hint.write_text(str(program), encoding="utf-8")
+    monkeypatch.setattr(launch.Path, "home", lambda: tmp_path)
+    found = launch.agent_command(start=tmp_path / "copied-addon" / "agent_launch.py")
+    assert found == [str(program)]
 
 
 def test_project_venv_is_used_when_the_program_is_not_on_path(
