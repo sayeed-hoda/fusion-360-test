@@ -176,6 +176,43 @@ def test_bad_hello_is_rejected_and_a_later_hello_connects():
         link.stop()
 
 
+def test_connection_info_follows_the_peer_and_get_status_crosses_the_socket():
+    link = FusionReplLink(port=0)
+    link.start()
+    try:
+        before = link.connection_info()
+        assert before["listening"] is True
+        assert before["websocket_connected"] is False
+        assert before["hello"] is None
+
+        async def script(ws) -> None:
+            await ws.send(dumps(_hello("Bracket")))
+            request = json.loads(await asyncio.wait_for(ws.recv(), 5))
+            assert request["type"] == "get_status"
+            await ws.send(
+                dumps(
+                    {
+                        "id": request["id"],
+                        "type": "response",
+                        "payload": {"connected": True, "document": "Bracket"},
+                    }
+                )
+            )
+
+        thread = _client(link.url, script)
+        link.wait_for_hello(timeout=5)
+        info = link.connection_info()
+        assert info["websocket_connected"] is True
+        assert info["hello"]["document"] == "Bracket"
+        assert info["hello"]["device_id"] == "dev-1"
+        assert link.request("get_status") == {"connected": True, "document": "Bracket"}
+        thread.join(timeout=5)
+        assert thread.errors == []  # type: ignore[attr-defined]
+        assert _SECRET not in json.dumps(link.connection_info())
+    finally:
+        link.stop()
+
+
 def test_wrong_path_is_not_the_connect_socket():
     link = FusionReplLink(port=0)
     link.start()

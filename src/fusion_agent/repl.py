@@ -41,6 +41,27 @@ WAITING_SOCKET_MESSAGE = (
     "WebSocket listening at {url}. Waiting for Fusion to connect; "
     "paste the local TYM1 key and click Pair in Fusion."
 )
+REPL_HELP = """\
+/status  WebSocket peer, then Fusion TCP through that socket
+/ws      listener URL and whether a peer is connected
+/tcp     ping Fusion on 127.0.0.1:9876 through the WebSocket
+/help    list these commands
+/quit    leave the chat"""
+_HELLO_FIELDS = (
+    "protocol_version",
+    "device_id",
+    "cad_kind",
+    "document",
+    "plugin_version",
+    "fusion_version",
+)
+_TCP_FIELDS = (
+    "document",
+    "fusion_version",
+    "plugin_version",
+    "schema",
+    "cad_kind",
+)
 SYSTEM = """You control Fusion 360 through the tools this process exposes.
 Call list_tools once. It returns each tool's name, description, and parameters.
 Then call call_tool with that name and an arguments object from the schema.
@@ -375,6 +396,96 @@ def wait_for_addon(
         sleep(poll_s)
 
 
+def repl_command(line: str, service: Any) -> str:
+    """Answer a ``/status``, ``/ws``, or ``/tcp`` check. Other text is not a command."""
+    command = line.split(maxsplit=1)[0].lower()
+    if command in ("/help", "/?"):
+        return REPL_HELP
+    if command == "/ws":
+        return _format_websocket(service)
+    if command == "/tcp":
+        return _format_tcp(service)
+    if command == "/status":
+        return f"{_format_websocket(service)}\n{_format_tcp(service)}"
+    return f"Unknown command '{command}'. Type /help."
+
+
+def _format_websocket(service: Any) -> str:
+    snapshot = _websocket_snapshot(service)
+    if snapshot is None:
+        return "WebSocket: not used. This session talks to Fusion over TCP."
+    url = snapshot.get("url") or "(unknown)"
+    listening = "listening" if snapshot.get("listening") else "not listening"
+    peer = "connected" if snapshot.get("websocket_connected") else "not connected"
+    lines = [f"WebSocket: {peer}", f"Listener: {listening} {url}"]
+    hello = snapshot.get("hello")
+    if isinstance(hello, dict) and hello:
+        detail = _detail(hello, _HELLO_FIELDS)
+        if detail:
+            lines.append(f"Hello: {detail}")
+    elif snapshot.get("websocket_connected"):
+        lines.append("Hello: not received")
+    return "\n".join(lines)
+
+
+def _format_tcp(service: Any) -> str:
+    snapshot = _websocket_snapshot(service)
+    via_socket = snapshot is not None
+    route = "via WebSocket" if via_socket else "direct"
+    if via_socket and not snapshot.get("websocket_connected"):
+        return (
+            "Fusion TCP 127.0.0.1:9876 via WebSocket: not tested. "
+            "No WebSocket peer is connected."
+        )
+    try:
+        status = _probe_fusion(service)
+    except AgentError as exc:
+        return (
+            f"Fusion TCP 127.0.0.1:9876 {route}: failed ({exc.code}: {exc.message})"
+        )
+    except Exception as exc:
+        return f"Fusion TCP 127.0.0.1:9876 {route}: failed ({exc})"
+    if not isinstance(status, dict):
+        return f"Fusion TCP 127.0.0.1:9876 {route}: unexpected reply {status!r}"
+    state = "connected" if status.get("connected") else "not connected"
+    line = f"Fusion TCP 127.0.0.1:9876 {route}: {state}"
+    detail = _detail(status, _TCP_FIELDS)
+    if detail:
+        return f"{line}\nTCP detail: {detail}"
+    return line
+
+
+def _websocket_snapshot(service: Any) -> dict[str, Any] | None:
+    info = getattr(service, "connection_info", None)
+    if not callable(info):
+        return None
+    snapshot = info()
+    if not isinstance(snapshot, dict):
+        return None
+    return snapshot
+
+
+def _probe_fusion(service: Any) -> Any:
+    """Ping the add-in. A WebSocket session asks its peer to open TCP."""
+    direct = getattr(service, "get_status", None)
+    if callable(direct):
+        return direct()
+    request = getattr(service, "request", None)
+    if callable(request):
+        return request("get_status")
+    raise AgentError.not_supported("This session cannot probe Fusion.")
+
+
+def _detail(payload: dict[str, Any], fields: tuple[str, ...]) -> str:
+    parts: list[str] = []
+    for name in fields:
+        value = payload.get(name)
+        if value is None or value == "" or isinstance(value, (dict, list)):
+            continue
+        parts.append(f"{name}={value}")
+    return " ".join(parts)
+
+
 def run_repl(
     *,
     service: Any,
@@ -395,6 +506,9 @@ def run_repl(
             continue
         if line in ("/quit", "/exit"):
             return
+        if line.startswith("/"):
+            write(repl_command(line, service))
+            continue
         messages.append({"role": "user", "content": line})
         try:
             answer = chat_once(messages, service, complete, log=write)
@@ -463,7 +577,10 @@ def main(
         def complete(messages: list[dict[str, Any]]) -> dict[str, Any]:
             return post_chat(base_url, api_key, model, messages, log=write)
 
-    write(f"fusion agent ready, model {model}. Type a request, or /quit.")
+    write(
+        f"fusion agent ready, model {model}. "
+        "Commands: /status, /ws, /tcp, /help, /quit."
+    )
     try:
         run_repl(service=service, complete=complete, read_line=read_line, write=write)
     except KeyboardInterrupt:

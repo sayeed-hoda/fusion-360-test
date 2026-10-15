@@ -12,6 +12,7 @@ from fusion_agent.repl import (
     chat_once,
     main,
     post_chat,
+    run_repl,
     run_tool,
     tool_message_content,
     wait_for_addon,
@@ -41,6 +42,102 @@ class _Conn:
 def _service() -> tuple[CommandService, _Conn]:
     conn = _Conn()
     return CommandService(connection=conn), conn
+
+
+def test_slash_status_reports_websocket_and_tcp_without_calling_the_model():
+    class Link:
+        def connection_info(self) -> dict:
+            return {
+                "listening": True,
+                "url": "ws://127.0.0.1:53117/api/v1/integrations/plugin/connect",
+                "websocket_connected": True,
+                "hello": {
+                    "protocol_version": "agent_ws_v1",
+                    "device_id": "dev-1",
+                    "document": "Bracket",
+                    "secret": "do-not-print",
+                },
+            }
+
+        def request(self, kind: str, payload: dict | None = None) -> dict:
+            assert kind == "get_status"
+            assert payload is None
+            return {
+                "connected": True,
+                "document": "Bracket",
+                "fusion_version": "2604.0.0",
+            }
+
+    lines: list[str] = []
+    steps = iter(["/status", "/help", "/nope", "/quit"])
+
+    def complete(_messages):
+        raise AssertionError("slash commands must not call the model")
+
+    run_repl(
+        service=Link(),
+        complete=complete,
+        read_line=lambda _prompt: next(steps),
+        write=lines.append,
+    )
+    text = "\n".join(lines)
+    assert "WebSocket: connected" in text
+    assert "document=Bracket" in text
+    assert "Fusion TCP 127.0.0.1:9876 via WebSocket: connected" in text
+    assert "fusion_version=2604.0.0" in text
+    assert "/tcp" in text
+    assert "Unknown command '/nope'" in text
+    assert "do-not-print" not in text
+
+
+def test_tcp_command_does_not_probe_when_the_websocket_is_down():
+    class Link:
+        def connection_info(self) -> dict:
+            return {
+                "listening": True,
+                "url": "ws://127.0.0.1:9/connect",
+                "websocket_connected": False,
+                "hello": None,
+            }
+
+        def request(self, kind: str, payload: dict | None = None) -> dict:
+            raise AssertionError("must not send get_status without a peer")
+
+    lines: list[str] = []
+    steps = iter(["/ws", "/tcp", "/quit"])
+
+    def complete(_messages):
+        raise AssertionError("slash commands must not call the model")
+
+    run_repl(
+        service=Link(),
+        complete=complete,
+        read_line=lambda _prompt: next(steps),
+        write=lines.append,
+    )
+    text = "\n".join(lines)
+    assert "WebSocket: not connected" in text
+    assert "not tested" in text
+
+
+def test_direct_session_status_pings_tcp_without_a_websocket():
+    service, conn = _service()
+    lines: list[str] = []
+    steps = iter(["/ws", "/tcp", "/quit"])
+
+    def complete(_messages):
+        raise AssertionError("slash commands must not call the model")
+
+    run_repl(
+        service=service,
+        complete=complete,
+        read_line=lambda _prompt: next(steps),
+        write=lines.append,
+    )
+    text = "\n".join(lines)
+    assert "WebSocket: not used" in text
+    assert "Fusion TCP 127.0.0.1:9876 direct: connected" in text
+    assert conn.sent == [("get_scene_info", {})]
 
 
 def test_list_tools_does_not_call_fusion_and_hides_blocked_names():

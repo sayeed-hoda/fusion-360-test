@@ -74,6 +74,22 @@ class FusionReplLink:
             raise TimeoutError("Fusion WebSocket did not connect.")
         return dict(self._hello_payload)
 
+    def connection_info(self) -> dict[str, Any]:
+        """Listener and peer state. This dict does not include the pairing secret."""
+        with self._lock:
+            connected = self._ws is not None
+            hello = dict(self._hello_payload) if self._hello.is_set() else None
+        return {
+            "listening": (
+                self._thread is not None
+                and not self._stopped
+                and self._bind_error is None
+            ),
+            "url": self.url,
+            "websocket_connected": connected,
+            "hello": hello,
+        }
+
     def list_tools(self) -> Any:
         return self.request("list_tools")
 
@@ -219,7 +235,8 @@ class FusionReplLink:
             return False
         if not isinstance(device, str) or not device:
             return False
-        self._hello_payload = payload
+        with self._lock:
+            self._hello_payload = dict(payload)
         self._hello.set()
         return True
 
