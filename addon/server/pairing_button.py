@@ -121,7 +121,8 @@ def _fit_dialog(cmd: adsk.core.Command, width: int, height: int) -> None:
             _log.info("Fusion did not accept dialog size via %s.", name)
 
 
-def _report(message: str, *, error: bool = False) -> None:
+def _report(message: str, *, error: bool = False, show: bool = False) -> None:
+    """Log every result; use a modal dialog only for errors or explicit status."""
     text = message.strip() or ("Pairing failed." if error else "Paired.")
     if error:
         _log.error("%s", text)
@@ -129,7 +130,7 @@ def _report(message: str, *, error: bool = False) -> None:
         _log.info("%s", text)
     app = adsk.core.Application.get()
     ui = app.userInterface if app is not None else None
-    if ui is not None:
+    if ui is not None and (error or show):
         title = "Tymeline pairing failed" if error else "Tymeline"
         ui.messageBox(text, title)
 
@@ -255,7 +256,7 @@ class _StatusExecute(adsk.core.CommandEventHandler):
     def notify(self, args: adsk.core.CommandEventArgs) -> None:
         del args
         try:
-            _report(connection_status())
+            _report(connection_status(), show=True)
         except AgentLaunchError as exc:
             _report(str(exc), error=True)
         except Exception:

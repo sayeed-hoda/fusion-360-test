@@ -166,6 +166,15 @@ def test_status_ping_success_includes_document_and_failure_stays_up():
     assert "document" not in offline
     assert down.sends == []
 
+    class SceneUnavailable(FakeConnection):
+        def send_command(self, command_type: str, params=None, **_kwargs):
+            assert command_type == "get_scene_info"
+            raise RuntimeError("no active design")
+
+    available = CommandService(connection=SceneUnavailable()).get_status()
+    assert available["connected"] is True
+    assert "document" not in available
+
 
 def test_non_loopback_host_raises():
     with pytest.raises(ValueError):

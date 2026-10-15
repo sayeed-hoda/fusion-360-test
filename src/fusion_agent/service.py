@@ -42,14 +42,19 @@ class CommandService:
             conn = self._require_connection()
             if conn.ping():
                 connected = True
+        except Exception:
+            connected = False
+        if connected:
+            try:
                 scene = conn.send_command("get_scene_info", {})
                 if isinstance(scene, dict):
                     document = _nonempty_str(scene.get("design_name"))
                     fusion_version = _nonempty_str(scene.get("fusion_version"))
-        except Exception:
-            connected = False
-            document = None
-            fusion_version = None
+            except Exception:
+                # A document query can fail while Fusion is changing workspaces
+                # or has no active design. The successful ping still proves the
+                # add-in transport is ready.
+                pass
         payload: dict[str, Any] = {
             "schema": STATUS_SCHEMA,
             "cad_kind": "fusion360",
