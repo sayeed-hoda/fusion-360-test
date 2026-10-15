@@ -11,7 +11,15 @@ from pathlib import Path, PosixPath
 
 import pytest
 
-from fusion_agent.cli import cmd_pair, cmd_serve, cmd_stop, cmd_unpair, open_serve
+from fusion_agent.cli import (
+    _write_status,
+    cmd_pair,
+    cmd_serve,
+    cmd_status,
+    cmd_stop,
+    cmd_unpair,
+    open_serve,
+)
 from fusion_agent.transport import device_id, pairing, paths
 
 
@@ -29,9 +37,11 @@ def _token(
 def isolated_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     pairing_file = tmp_path / "pairing.json"
     pid_file = tmp_path / "agent.pid"
+    status_file = tmp_path / "status.json"
     monkeypatch.setattr(pairing, "pairing_path", lambda: pairing_file)
     monkeypatch.setattr("fusion_agent.transport.paths.pid_path", lambda: pid_file)
     monkeypatch.setattr("fusion_agent.cli.paths.pid_path", lambda: pid_file)
+    monkeypatch.setattr("fusion_agent.cli.paths.status_path", lambda: status_file)
     monkeypatch.delenv("FUSION_AGENT_GATEWAY", raising=False)
     monkeypatch.delenv("FUSION_AGENT_TOKEN", raising=False)
     monkeypatch.delenv("FUSION_AGENT_TOKEN_ID", raising=False)
@@ -140,6 +150,42 @@ def test_second_serve_does_not_start(isolated_config, monkeypatch, capsys):
     assert client is None
     assert code == 1
     assert "Already running" in captured.out
+
+
+def test_status_reports_live_connection_without_secret(isolated_config, capsys):
+    _pairing_file, pid_file = isolated_config
+    pid_file.write_text(f"{os.getpid()}\n", encoding="utf-8")
+
+    class Client:
+        connected = True
+        fusion_connected = True
+        gave_up = False
+        gateway_url = "wss://gateway.tymeline.app/connect"
+
+    _write_status(Client())
+    assert cmd_status() == 0
+    output = capsys.readouterr().out
+    assert "Tymeline is connected" in output
+    assert "Fusion is connected" in output
+    assert "secret" not in output
+
+
+def test_status_reports_reconnecting_and_disconnected(isolated_config, capsys):
+    _pairing_file, pid_file = isolated_config
+    pid_file.write_text(f"{os.getpid()}\n", encoding="utf-8")
+
+    class Client:
+        connected = False
+        fusion_connected = False
+        gave_up = False
+        gateway_url = "wss://gateway.tymeline.app/connect"
+
+    _write_status(Client())
+    assert cmd_status() == 0
+    assert "reconnecting" in capsys.readouterr().out
+    pid_file.unlink()
+    assert cmd_status() == 0
+    assert "disconnected" in capsys.readouterr().out
 
 
 def _pin_home(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:

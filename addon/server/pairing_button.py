@@ -11,10 +11,11 @@ from pathlib import Path
 import adsk.core
 
 from . import get_logger
-from .agent_launch import AgentLaunchError, pair_and_start, unpair
+from .agent_launch import AgentLaunchError, connection_status, pair_and_start, unpair
 
 PAIR_CMD_ID = "tymeline_fusion_pair"
 UNPAIR_CMD_ID = "tymeline_fusion_unpair"
+STATUS_CMD_ID = "tymeline_fusion_status"
 PANEL_ID = "TymelineFusionPanel"
 WORKSPACE_ID = "FusionSolidEnvironment"
 _ADDINS_PANEL = "SolidScriptsAddinsPanel"
@@ -44,12 +45,21 @@ def install(ui: adsk.core.UserInterface) -> None:
         "Forget the Tymeline pairing key and disconnect.",
         _LOGO_FOLDER,
     )
+    status_def = ui.commandDefinitions.addButtonDefinition(
+        STATUS_CMD_ID,
+        "Tymeline Status",
+        "Show whether Fusion is connected or reconnecting to Tymeline.",
+        _LOGO_FOLDER,
+    )
     pair_created = _PairCreated()
     pair_def.commandCreated.add(pair_created)
     _handlers.append(pair_created)
     unpair_created = _UnpairCreated()
     unpair_def.commandCreated.add(unpair_created)
     _handlers.append(unpair_created)
+    status_created = _StatusCreated()
+    status_def.commandCreated.add(status_created)
+    _handlers.append(status_created)
 
     workspace = ui.workspaces.itemById(WORKSPACE_ID)
     if workspace is None:
@@ -62,6 +72,7 @@ def install(ui: adsk.core.UserInterface) -> None:
     except AttributeError:
         _log.info("This Fusion build does not promote the Pair button by default.")
     panel.controls.addCommand(unpair_def)
+    panel.controls.addCommand(status_def)
 
 
 def remove(ui: adsk.core.UserInterface | None) -> None:
@@ -87,12 +98,12 @@ def _remove_controls(ui: adsk.core.UserInterface) -> None:
     if workspace is not None:
         panel = workspace.toolbarPanels.itemById(PANEL_ID)
     if panel is not None:
-        for cmd_id in (PAIR_CMD_ID, UNPAIR_CMD_ID):
+        for cmd_id in (PAIR_CMD_ID, UNPAIR_CMD_ID, STATUS_CMD_ID):
             control = panel.controls.itemById(cmd_id)
             if control is not None:
                 control.deleteMe()
         panel.deleteMe()
-    for cmd_id in (PAIR_CMD_ID, UNPAIR_CMD_ID):
+    for cmd_id in (PAIR_CMD_ID, UNPAIR_CMD_ID, STATUS_CMD_ID):
         command = ui.commandDefinitions.itemById(cmd_id)
         if command is not None:
             command.deleteMe()
@@ -217,6 +228,34 @@ class _UnpairExecute(adsk.core.CommandEventHandler):
         del args
         try:
             _report(unpair())
+        except AgentLaunchError as exc:
+            _report(str(exc), error=True)
+        except Exception:
+            _report(traceback.format_exc(), error=True)
+
+
+class _StatusCreated(adsk.core.CommandCreatedEventHandler):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def notify(self, args: adsk.core.CommandCreatedEventArgs) -> None:
+        try:
+            cmd = adsk.core.CommandCreatedEventArgs.cast(args).command
+            on_execute = _StatusExecute()
+            cmd.execute.add(on_execute)
+            _handlers.append(on_execute)
+        except Exception:
+            _report(traceback.format_exc(), error=True)
+
+
+class _StatusExecute(adsk.core.CommandEventHandler):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def notify(self, args: adsk.core.CommandEventArgs) -> None:
+        del args
+        try:
+            _report(connection_status())
         except AgentLaunchError as exc:
             _report(str(exc), error=True)
         except Exception:

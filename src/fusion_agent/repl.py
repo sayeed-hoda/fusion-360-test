@@ -427,8 +427,8 @@ def main(
     fusion_link = None
     ws_client = None
     if service is None and link is None:
-        from fusion_agent.service import CommandService
         from fusion_agent.repl_link import FusionReplLink
+        from fusion_agent.service import CommandService
         from fusion_agent.transport.ws_client import WsClient
 
         addon_service = CommandService()

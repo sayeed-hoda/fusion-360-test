@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import signal
@@ -63,6 +64,62 @@ def _clear_pid() -> None:
         path.unlink(missing_ok=True)
 
 
+def _write_status(client: object) -> None:
+    """Publish non-secret connection state for the Fusion toolbar."""
+    connected = bool(getattr(client, "connected", False))
+    gave_up = bool(getattr(client, "gave_up", False))
+    payload = {
+        "state": "error" if gave_up else ("connected" if connected else "connecting"),
+        "fusion_connected": bool(getattr(client, "fusion_connected", False)),
+        "gateway_url": str(getattr(client, "gateway_url", "")),
+        "pid": os.getpid(),
+    }
+    path = paths.status_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload), encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _clear_status() -> None:
+    try:
+        paths.status_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def cmd_status() -> int:
+    """Print daemon state without exposing its pairing secret."""
+    pid = _read_pid()
+    if pid is None or not _pid_alive(pid):
+        _clear_status()
+        print("Tymeline is disconnected.", flush=True)
+        return 0
+    try:
+        payload = json.loads(paths.status_path().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        print("Tymeline is starting.", flush=True)
+        return 0
+    state = payload.get("state")
+    url = payload.get("gateway_url")
+    destination = f" to {url}" if isinstance(url, str) and url else ""
+    if state == "connected":
+        fusion = (
+            " Fusion is connected."
+            if payload.get("fusion_connected")
+            else " Fusion is not currently available."
+        )
+        print(f"Tymeline is connected{destination}.{fusion}", flush=True)
+    elif state == "error":
+        print(
+            f"Tymeline stopped reconnecting{destination}. Pair again to continue.",
+            flush=True,
+        )
+    else:
+        print(f"Tymeline is reconnecting{destination}.", flush=True)
+    return 0
+
+
 def open_serve() -> tuple[object | None, int]:
     """Start the WebSocket when pairing is present. Does not wait for Ctrl+C."""
     existing = _read_pid()
@@ -111,11 +168,15 @@ def cmd_serve() -> int:
     )
     try:
         while not stop.wait(0.5):
-            pass
+            try:
+                _write_status(client)
+            except OSError:
+                pass
     finally:
         stop_fn = getattr(client, "stop", None)
         if callable(stop_fn):
             stop_fn()
+        _clear_status()
         _clear_pid()
     return 0
 
@@ -162,6 +223,7 @@ def cmd_stop() -> int:
             except OSError:
                 pass
         print("[Agent] Not running.", flush=True)
+        _clear_status()
         return 0
     try:
         os.kill(pid, signal.SIGTERM)
@@ -172,6 +234,7 @@ def cmd_stop() -> int:
     while time.monotonic() < deadline:
         if not _pid_alive(pid):
             print(f"[Agent] Stopped (pid {pid}).", flush=True)
+            _clear_status()
             return 0
         time.sleep(0.05)
     print(f"[Agent] Still running (pid {pid}).", flush=True)
@@ -191,6 +254,7 @@ def build_parser() -> argparse.ArgumentParser:
     pair.add_argument("token")
     sub.add_parser("unpair", help="forget the stored pairing token")
     sub.add_parser("stop", help="stop the running connection")
+    sub.add_parser("status", help="show the Tymeline and Fusion connection state")
     sub.add_parser(
         "repl",
         help="test Fusion over agent_ws_v1, then chat with GLM (needs GLM_API_KEY)",
@@ -208,6 +272,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_unpair()
     if args.command == "stop":
         return cmd_stop()
+    if args.command == "status":
+        return cmd_status()
     if args.command == "repl":
         from fusion_agent.repl import main as repl_main
 

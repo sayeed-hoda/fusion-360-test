@@ -141,6 +141,23 @@ def test_unpair_when_nothing_was_stored(launch, monkeypatch, tmp_path: Path):
     assert launch.unpair(run=fake_run) == "Tymeline was not paired."
 
 
+def test_connection_status_uses_the_agent_command(
+    launch, monkeypatch, tmp_path: Path
+):
+    monkeypatch.setenv("FUSION_AGENT_BIN", str(_bin(tmp_path)))
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **_kwargs):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(
+            argv, 0, stdout="Tymeline is connected. Fusion is connected.\n"
+        )
+
+    message = launch.connection_status(run=fake_run)
+    assert message == "Tymeline is connected. Fusion is connected."
+    assert calls[0][-1] == "status"
+
+
 def test_missing_program_is_reported(launch, monkeypatch, tmp_path: Path):
     monkeypatch.delenv("FUSION_AGENT_BIN", raising=False)
     monkeypatch.delenv("FUSION_AGENT_PROJECT", raising=False)
@@ -184,6 +201,8 @@ def test_the_add_in_does_not_choose_the_pairing_folder():
         assert "APPDATA" not in text
         assert "pairing.json" not in text
     assert "pair_and_start" in button_text
+    assert "connection_status" in button_text
+    assert "Tymeline Status" in button_text
     assert "addButtonDefinition" in button_text
     assert "Paste the TYM1 pairing key" in button_text
     assert "_LOGO_FOLDER" in button_text

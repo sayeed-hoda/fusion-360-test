@@ -86,3 +86,8 @@ def device_id_path() -> Path:
 
 def pid_path() -> Path:
     return config_root() / "agent.pid"
+
+
+def status_path() -> Path:
+    """Daemon connection state. This file never contains the pairing secret."""
+    return config_root() / "status.json"

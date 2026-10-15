@@ -91,6 +91,21 @@ class WsClient:
     def gateway_url(self) -> str:
         return self._gateway_url
 
+    @property
+    def connected(self) -> bool:
+        with self._lock:
+            return self._connected
+
+    @property
+    def fusion_connected(self) -> bool:
+        with self._lock:
+            return self._fusion_up
+
+    @property
+    def gave_up(self) -> bool:
+        with self._lock:
+            return self._gave_up
+
     def start(self) -> None:
         if self._stop.is_set():
             return

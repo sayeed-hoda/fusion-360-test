@@ -153,6 +153,23 @@ def unpair(
     return "Tymeline pairing removed."
 
 
+def connection_status(
+    *,
+    start: Path | None = None,
+    run: object | None = None,
+) -> str:
+    """Return the daemon's safe, user-facing connection status."""
+    command = _require_command(start)
+    runner = run if run is not None else subprocess.run
+    return _run(
+        runner,
+        [*command, "status"],
+        "",
+        timeout=10,
+        failure="Could not read the Tymeline connection status.",
+    )
+
+
 def _require_command(start: Path | None) -> list[str]:
     command = agent_command(start)
     if command is None:
