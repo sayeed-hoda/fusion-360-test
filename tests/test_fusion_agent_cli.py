@@ -12,6 +12,7 @@ from pathlib import Path, PosixPath
 import pytest
 
 from fusion_agent.cli import (
+    _pid_alive,
     _remember_cli_executable,
     _write_status,
     cmd_pair,
@@ -184,6 +185,33 @@ def test_status_reports_live_connection_without_secret(isolated_config, capsys):
     assert "secret" not in output
 
 
+def test_status_treats_a_windows_missing_process_as_disconnected(
+    isolated_config, monkeypatch, capsys
+):
+    """WinError 87 is how Windows answers os.kill(pid, 0) for a dead pid."""
+    _pairing_file, pid_file = isolated_config
+    pid_file.write_text("4242\n", encoding="utf-8")
+
+    def fake_kill(pid: int, sig: int) -> None:
+        assert (pid, sig) == (4242, 0)
+        raise OSError(22, "The parameter is incorrect", None, 87)
+
+    monkeypatch.setattr("fusion_agent.cli.os.kill", fake_kill)
+    assert _pid_alive(0) is False
+    assert _pid_alive(4242) is False
+    assert cmd_status() == 0
+    assert "disconnected" in capsys.readouterr().out
+
+
+def test_pid_alive_counts_an_unsignalable_process_as_running(monkeypatch):
+    def fake_kill(pid: int, sig: int) -> None:
+        assert (pid, sig) == (4242, 0)
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr("fusion_agent.cli.os.kill", fake_kill)
+    assert _pid_alive(4242) is True
+
+
 def test_status_reports_reconnecting_and_disconnected(isolated_config, capsys):
     _pairing_file, pid_file = isolated_config
     pid_file.write_text(f"{os.getpid()}\n", encoding="utf-8")
@@ -330,6 +358,22 @@ def test_stop_reports_when_nothing_is_running(isolated_config, capsys):
     code = cmd_stop()
     assert code == 0
     assert "Not running" in capsys.readouterr().out
+
+
+def test_stop_treats_a_windows_missing_process_as_not_running(
+    isolated_config, monkeypatch, capsys
+):
+    """Pair calls stop first. A stale pid must not abort that step on Windows."""
+    _pairing_file, pid_file = isolated_config
+    pid_file.write_text("4242\n", encoding="utf-8")
+
+    def fake_kill(pid: int, sig: int) -> None:
+        raise OSError(22, "The parameter is incorrect", None, 87)
+
+    monkeypatch.setattr("fusion_agent.cli.os.kill", fake_kill)
+    assert cmd_stop() == 0
+    assert "Not running" in capsys.readouterr().out
+    assert not pid_file.exists()
 
 
 def test_stop_signals_a_running_agent(isolated_config, monkeypatch):

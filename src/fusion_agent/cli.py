@@ -50,12 +50,23 @@ def _remember_cli_executable() -> None:
 
 
 def _pid_alive(pid: int) -> bool:
+    """Return whether *pid* still refers to a running process.
+
+    ``os.kill(pid, 0)`` is an existence probe. A missing process is
+    ``ProcessLookupError`` on Unix. On Windows the same probe raises
+    ``OSError: [WinError 87] The parameter is incorrect``.
+    """
+    if pid <= 0:
+        return False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
+        # The process exists, but this user cannot signal it.
         return True
+    except OSError:
+        return False
     return True
 
 
