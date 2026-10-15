@@ -96,3 +96,13 @@ def pid_path() -> Path:
 def status_path() -> Path:
     """Daemon connection state. This file never contains the pairing secret."""
     return config_root() / "status.json"
+
+
+def repl_pid_path() -> Path:
+    """Process id of ``fusion-agent repl``, the local WebSocket server."""
+    return config_root() / "repl.pid"
+
+
+def repl_status_path() -> Path:
+    """REPL listener state. This file never contains the pairing secret."""
+    return config_root() / "repl-status.json"

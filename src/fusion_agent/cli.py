@@ -116,18 +116,73 @@ def _clear_status() -> None:
         pass
 
 
-def cmd_status() -> int:
-    """Print daemon state without exposing its pairing secret."""
+def _read_repl_pid() -> int | None:
+    path = paths.repl_pid_path()
+    if not path.is_file():
+        return None
+    try:
+        return int(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _write_repl_pid() -> None:
+    path = paths.repl_pid_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{os.getpid()}\n", encoding="utf-8")
+
+
+def _clear_repl_pid() -> None:
+    path = paths.repl_pid_path()
+    if _read_repl_pid() == os.getpid():
+        path.unlink(missing_ok=True)
+
+
+def note_repl_listener(url: str, *, connected: bool) -> None:
+    """Publish the local WebSocket server for the Fusion status button."""
+    _write_repl_pid()
+    payload = {
+        "listening": True,
+        "websocket_connected": connected,
+        "url": url,
+        "pid": os.getpid(),
+    }
+    path = paths.repl_status_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload), encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def clear_repl_listener() -> None:
+    """Remove the REPL listener record after its WebSocket server has closed."""
+    _clear_repl_pid()
+    try:
+        paths.repl_status_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _forget_dead_pid(pid: int | None, path: Path, clear) -> None:
+    if pid is not None and _pid_alive(pid):
+        return
+    if path.is_file():
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    clear()
+
+
+def _daemon_status_line() -> str | None:
     pid = _read_pid()
     if pid is None or not _pid_alive(pid):
-        _clear_status()
-        print("Tymeline is disconnected.", flush=True)
-        return 0
+        _forget_dead_pid(pid, paths.pid_path(), _clear_status)
+        return None
     try:
         payload = json.loads(paths.status_path().read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        print("Tymeline is starting.", flush=True)
-        return 0
+        return "Tymeline is starting."
     state = payload.get("state")
     url = payload.get("gateway_url")
     destination = f" to {url}" if isinstance(url, str) and url else ""
@@ -137,14 +192,39 @@ def cmd_status() -> int:
             if payload.get("fusion_connected")
             else " Fusion is not currently available."
         )
-        print(f"Tymeline is connected{destination}.{fusion}", flush=True)
-    elif state == "error":
-        print(
-            f"Tymeline stopped reconnecting{destination}. Pair again to continue.",
-            flush=True,
-        )
-    else:
-        print(f"Tymeline is reconnecting{destination}.", flush=True)
+        return f"Tymeline is connected{destination}.{fusion}"
+    if state == "error":
+        return f"Tymeline stopped reconnecting{destination}. Pair again to continue."
+    return f"Tymeline is reconnecting{destination}."
+
+
+def _repl_status_line() -> str | None:
+    pid = _read_repl_pid()
+    if pid is None or not _pid_alive(pid):
+        _forget_dead_pid(pid, paths.repl_pid_path(), clear_repl_listener)
+        return None
+    try:
+        payload = json.loads(paths.repl_status_path().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return "Tymeline REPL WebSocket server is starting."
+    url = payload.get("url")
+    where = f" at {url}" if isinstance(url, str) and url else ""
+    if payload.get("websocket_connected"):
+        return f"Tymeline REPL WebSocket is connected{where}."
+    return f"Tymeline REPL WebSocket server is running{where}, waiting for Fusion."
+
+
+def cmd_status() -> int:
+    """Print daemon and REPL WebSocket state without exposing a pairing secret."""
+    lines = [
+        line
+        for line in (_daemon_status_line(), _repl_status_line())
+        if line is not None
+    ]
+    if not lines:
+        print("Tymeline is disconnected.", flush=True)
+        return 0
+    print("\n".join(lines), flush=True)
     return 0
 
 
@@ -242,33 +322,50 @@ def cmd_unpair() -> int:
     return 0
 
 
-def cmd_stop() -> int:
-    """Stop a running serve process. The pairing file stays."""
-    pid = _read_pid()
-    if pid is None or not _pid_alive(pid):
-        path = paths.pid_path()
-        if path.is_file():
-            try:
-                path.unlink()
-            except OSError:
-                pass
-        print("[Agent] Not running.", flush=True)
-        _clear_status()
-        return 0
+def _signal_stop(pid: int) -> str | None:
+    """Ask one process to exit. ``None`` means it exited."""
     try:
         os.kill(pid, signal.SIGTERM)
     except OSError as exc:
-        print(f"[Agent] Could not stop pid {pid}: {exc}", flush=True)
-        return 1
+        return f"[Agent] Could not stop pid {pid}: {exc}"
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
         if not _pid_alive(pid):
-            print(f"[Agent] Stopped (pid {pid}).", flush=True)
-            _clear_status()
-            return 0
+            return None
         time.sleep(0.05)
-    print(f"[Agent] Still running (pid {pid}).", flush=True)
-    return 1
+    return f"[Agent] Still running (pid {pid})."
+
+
+def cmd_stop() -> int:
+    """Stop the daemon and the REPL WebSocket server. The pairing file stays.
+
+    Fusion calls this when the add-in closes, so the listener does not stay up
+    after the UI is gone.
+    """
+    stopped: list[int] = []
+    problems: list[str] = []
+    for pid, path, clear in (
+        (_read_pid(), paths.pid_path(), _clear_status),
+        (_read_repl_pid(), paths.repl_pid_path(), clear_repl_listener),
+    ):
+        if pid is None or not _pid_alive(pid):
+            _forget_dead_pid(pid, path, clear)
+            continue
+        problem = _signal_stop(pid)
+        if problem is None:
+            stopped.append(pid)
+            _forget_dead_pid(None, path, clear)
+        else:
+            problems.append(problem)
+    if problems:
+        print("\n".join(problems), flush=True)
+        return 1
+    if stopped:
+        names = ", ".join(str(pid) for pid in stopped)
+        print(f"[Agent] Stopped (pid {names}).", flush=True)
+        return 0
+    print("[Agent] Not running.", flush=True)
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:

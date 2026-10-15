@@ -93,7 +93,7 @@ def _install_pairing_button() -> None:
 
 
 def _stop_tymeline_connection() -> None:
-    """Stop the daemon started by Pair while keeping the saved pairing."""
+    """Stop the daemon and the REPL WebSocket server. The saved key stays."""
     try:
         from .server.agent_launch import stop_connection
 

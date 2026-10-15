@@ -15,11 +15,13 @@ from fusion_agent.cli import (
     _pid_alive,
     _remember_cli_executable,
     _write_status,
+    clear_repl_listener,
     cmd_pair,
     cmd_serve,
     cmd_status,
     cmd_stop,
     cmd_unpair,
+    note_repl_listener,
     open_serve,
 )
 from fusion_agent.transport import device_id, pairing, paths
@@ -52,10 +54,16 @@ def isolated_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     pairing_file = tmp_path / "pairing.json"
     pid_file = tmp_path / "agent.pid"
     status_file = tmp_path / "status.json"
+    repl_pid_file = tmp_path / "repl.pid"
+    repl_status_file = tmp_path / "repl-status.json"
     monkeypatch.setattr(pairing, "pairing_path", lambda: pairing_file)
     monkeypatch.setattr("fusion_agent.transport.paths.pid_path", lambda: pid_file)
     monkeypatch.setattr("fusion_agent.cli.paths.pid_path", lambda: pid_file)
     monkeypatch.setattr("fusion_agent.cli.paths.status_path", lambda: status_file)
+    monkeypatch.setattr("fusion_agent.cli.paths.repl_pid_path", lambda: repl_pid_file)
+    monkeypatch.setattr(
+        "fusion_agent.cli.paths.repl_status_path", lambda: repl_status_file
+    )
     monkeypatch.delenv("FUSION_AGENT_GATEWAY", raising=False)
     monkeypatch.delenv("FUSION_AGENT_TOKEN", raising=False)
     monkeypatch.delenv("FUSION_AGENT_TOKEN_ID", raising=False)
@@ -210,6 +218,49 @@ def test_pid_alive_counts_an_unsignalable_process_as_running(monkeypatch):
 
     monkeypatch.setattr("fusion_agent.cli.os.kill", fake_kill)
     assert _pid_alive(4242) is True
+
+
+def test_status_reports_the_live_repl_websocket(isolated_config, capsys):
+    """The toolbar status follows the REPL listener, not only the daemon pid."""
+    note_repl_listener("ws://127.0.0.1:53117/connect", connected=False)
+    assert cmd_status() == 0
+    waiting = capsys.readouterr().out
+    assert "REPL WebSocket server is running" in waiting
+    assert "waiting for Fusion" in waiting
+    assert "disconnected" not in waiting
+
+    note_repl_listener("ws://127.0.0.1:53117/connect", connected=True)
+    assert cmd_status() == 0
+    connected = capsys.readouterr().out
+    assert "REPL WebSocket is connected" in connected
+    assert "ws://127.0.0.1:53117/connect" in connected
+
+    clear_repl_listener()
+    assert cmd_status() == 0
+    assert "disconnected" in capsys.readouterr().out
+
+
+def test_stop_closes_the_repl_websocket_server(isolated_config, monkeypatch, capsys):
+    """Closing Fusion runs stop, which must also exit the REPL listener."""
+    _pairing_file, _pid_file = isolated_config
+    from fusion_agent.cli import paths
+
+    paths.repl_pid_path().write_text("5252\n", encoding="utf-8")
+    killed: list[int] = []
+
+    def alive(pid: int) -> bool:
+        return pid not in killed
+
+    def fake_kill(pid: int, sig: int) -> None:
+        assert sig == signal.SIGTERM
+        killed.append(pid)
+
+    monkeypatch.setattr("fusion_agent.cli._pid_alive", alive)
+    monkeypatch.setattr("fusion_agent.cli.os.kill", fake_kill)
+    assert cmd_stop() == 0
+    assert killed == [5252]
+    assert "Stopped" in capsys.readouterr().out
+    assert not paths.repl_pid_path().exists()
 
 
 def test_status_reports_reconnecting_and_disconnected(isolated_config, capsys):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -332,9 +333,13 @@ def test_repl_waits_until_the_addin_answers(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_default_repl_listens_and_waits_for_fusion_to_initiate_websocket(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
     monkeypatch.setenv("GLM_API_KEY", "glm-secret-key")
+    repl_pid = tmp_path / "repl.pid"
+    repl_status = tmp_path / "repl-status.json"
+    monkeypatch.setattr("fusion_agent.cli.paths.repl_pid_path", lambda: repl_pid)
+    monkeypatch.setattr("fusion_agent.cli.paths.repl_status_path", lambda: repl_status)
 
     class Link:
         url = "ws://127.0.0.1:53117/api/v1/integrations/plugin/connect"
@@ -345,6 +350,14 @@ def test_default_repl_listens_and_waits_for_fusion_to_initiate_websocket(
 
         def start(self):
             self.started = True
+
+        def connection_info(self) -> dict:
+            return {
+                "listening": self.started and not self.stopped,
+                "url": self.url,
+                "websocket_connected": False,
+                "hello": None,
+            }
 
         def wait_for_hello(self):
             assert self.started is True
@@ -369,6 +382,8 @@ def test_default_repl_listens_and_waits_for_fusion_to_initiate_websocket(
     assert "Fusion WebSocket connected. document=Local design" in joined
     assert "fusion agent ready" in joined
     assert "click Pair in Fusion" in joined
+    assert not repl_pid.exists()
+    assert not repl_status.exists()
 
 
 def test_wait_keeps_polling_when_status_raises():

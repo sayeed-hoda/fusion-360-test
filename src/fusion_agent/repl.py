@@ -538,24 +538,42 @@ def main(
         write(MISSING_KEY_MESSAGE)
         return 1
     fusion_link = None
+    owns_listener = service is None and link is None
     if service is None:
         fusion_link = link
         if fusion_link is None:
             from fusion_agent.repl_link import FusionReplLink
 
-            fusion_link = FusionReplLink(status=write)
+            def publish(connected: bool) -> None:
+                current = fusion_link
+                target = current.url if current is not None else ""
+                note_repl_listener(target, connected=connected)
+
+            from fusion_agent.cli import clear_repl_listener, note_repl_listener
+
+            fusion_link = FusionReplLink(status=write, on_change=publish)
             try:
                 fusion_link.start()
             except OSError as exc:
                 write(f"Could not listen for Fusion: {exc}")
                 fusion_link.stop()
+                clear_repl_listener()
                 return 1
+            snapshot = fusion_link.connection_info()
+            note_repl_listener(
+                str(snapshot.get("url") or fusion_link.url),
+                connected=bool(snapshot.get("websocket_connected")),
+            )
         write(WAITING_SOCKET_MESSAGE.format(url=fusion_link.url))
         try:
             hello = fusion_link.wait_for_hello()
         except KeyboardInterrupt:
             write("")
             fusion_link.stop()
+            if owns_listener:
+                from fusion_agent.cli import clear_repl_listener
+
+                clear_repl_listener()
             return 0
         document = hello.get("document") if isinstance(hello, dict) else None
         if isinstance(document, str) and document:
@@ -588,4 +606,8 @@ def main(
     finally:
         if fusion_link is not None:
             fusion_link.stop()
+        if owns_listener:
+            from fusion_agent.cli import clear_repl_listener
+
+            clear_repl_listener()
     return 0

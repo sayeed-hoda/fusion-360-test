@@ -34,11 +34,13 @@ class FusionReplLink:
         self,
         port: int = WS_PORT,
         status: Callable[[str], None] | None = None,
+        on_change: Callable[[bool], None] | None = None,
     ) -> None:
         if port < 0 or port > 65535:
             raise ValueError("Fusion REPL WebSocket port is out of range.")
         self.port = port
         self._status = status
+        self._on_change = on_change
         self._ready = threading.Event()
         self._hello = threading.Event()
         self._hello_payload: dict[str, Any] = {}
@@ -147,6 +149,7 @@ class FusionReplLink:
         if thread is not None:
             thread.join(timeout=5)
         self._fail_pending("Fusion WebSocket disconnected.")
+        self._peer_changed(False)
 
     def _thread_main(self) -> None:
         try:
@@ -223,6 +226,7 @@ class FusionReplLink:
             if current:
                 if accepted:
                     self._notify("Fusion WebSocket disconnected.")
+                    self._peer_changed(False)
                 self._fail_pending("Fusion WebSocket disconnected.")
 
     def _take_hello(self, env: Envelope) -> bool:
@@ -238,6 +242,7 @@ class FusionReplLink:
         with self._lock:
             self._hello_payload = dict(payload)
         self._hello.set()
+        self._peer_changed(True)
         return True
 
     async def _send_request(
@@ -294,6 +299,15 @@ class FusionReplLink:
         for fut in pending:
             if not fut.done():
                 fut.set_exception(error)
+
+    def _peer_changed(self, connected: bool) -> None:
+        callback = self._on_change
+        if callback is None:
+            return
+        try:
+            callback(connected)
+        except Exception:
+            pass
 
     def _notify(self, message: str) -> None:
         if self._status is None:

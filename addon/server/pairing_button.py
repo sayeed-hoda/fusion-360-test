@@ -48,7 +48,7 @@ def install(ui: adsk.core.UserInterface) -> None:
     status_def = ui.commandDefinitions.addButtonDefinition(
         STATUS_CMD_ID,
         "Tymeline Status",
-        "Show whether Fusion is connected or reconnecting to Tymeline.",
+        "Show whether Tymeline or the local REPL WebSocket is connected.",
         _LOGO_FOLDER,
     )
     pair_created = _PairCreated()

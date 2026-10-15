@@ -206,7 +206,7 @@ def stop_connection(
     start: Path | None = None,
     run: object | None = None,
 ) -> str:
-    """Stop the detached Tymeline daemon without deleting its pairing key."""
+    """Stop the daemon and the REPL WebSocket server. The pairing key stays."""
     command = _require_command(start)
     runner = run if run is not None else subprocess.run
     return _run(
