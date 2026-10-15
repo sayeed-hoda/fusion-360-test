@@ -234,6 +234,34 @@ def test_repl_waits_until_the_addin_answers(monkeypatch: pytest.MonkeyPatch):
     assert asked == ["make a box"]
 
 
+def test_default_repl_uses_websocket_without_pairing(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("GLM_API_KEY", "glm-secret-key")
+
+    class Local:
+        def get_status(self):
+            return {"connected": True, "document": "Local design"}
+
+        def list_tools(self):
+            return {"tools": []}
+
+    monkeypatch.setattr("fusion_agent.service.CommandService", Local)
+    lines: list[str] = []
+    code = main(
+        complete=lambda _messages: {"role": "assistant", "content": "Ready."},
+        read_line=lambda _prompt: "/quit",
+        write=lines.append,
+    )
+    assert code == 0
+    joined = "\n".join(lines)
+    assert "Fusion add-in is connected. document=Local design" in joined
+    assert "Connecting Fusion to the local WebSocket" in joined
+    assert "Fusion WebSocket connected. document=Local design" in joined
+    assert "fusion agent ready" in joined
+    assert "Paste a TYM1" not in joined
+
+
 def test_wait_keeps_polling_when_status_raises():
     class Flaky:
         def __init__(self) -> None:

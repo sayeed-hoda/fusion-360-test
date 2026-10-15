@@ -193,7 +193,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("stop", help="stop the running connection")
     sub.add_parser(
         "repl",
-        help="wait for Fusion's WebSocket, then chat with GLM (needs GLM_API_KEY)",
+        help="test Fusion over agent_ws_v1, then chat with GLM (needs GLM_API_KEY)",
     )
     return parser
 
