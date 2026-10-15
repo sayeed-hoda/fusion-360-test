@@ -36,7 +36,7 @@ Two scripts handle it:
 
 ### 1. Install the Fusion add-in (Windows)
 
-Follow the main README — copy the `addon` directory into Fusion's add-ins folder and start it via Shift+S → Add-Ins → Fusion360MCP → Run. Confirm in TEXT COMMANDS:
+Follow the main README — copy the `addon` directory into Fusion's add-ins folder as `TymelineFusion360` and start it via Shift+S → Add-Ins → TymelineFusion360 → Run. Confirm in TEXT COMMANDS:
 
 ```
 [MCP] Server listening on localhost:9876
@@ -132,7 +132,7 @@ Ask your MCP client to call the `ping` tool. If it returns `{"pong": true}`, you
 | MCP client shows server disconnected | Wrapper failed to start | Run the wrapper manually (`bash devcontainer/fusion-mcp-wrapper.sh`) and check stderr |
 | `uvx: not found` | uv not installed in container | Install uv (see Prerequisites) |
 | Python relay error: address in use | Stale relay from a previous run | `lsof -ti:9876 \| xargs kill` |
-| TCP test: connection refused | Fusion add-in not running on host | Shift+S → Add-Ins → Fusion360MCP → Run |
+| TCP test: connection refused | Fusion add-in not running on host | Shift+S → Add-Ins → TymelineFusion360 → Run |
 | TCP test: connection timed out | Bridge script not run, or firewall blocking | Re-run `fusion-mcp-bridge.ps1` as Administrator |
 | Bridge script: no Docker adapters found | Docker Desktop not running, or unusual network setup | Check `Get-NetIPAddress` shows a 172.16–31.x adapter |
 

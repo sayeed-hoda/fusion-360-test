@@ -36,7 +36,7 @@ MISSING_KEY_MESSAGE = (
 )
 WAITING_MESSAGE = (
     "Waiting for the Fusion add-in on 127.0.0.1:9876. "
-    "Checking every {seconds}s. Start Fusion360MCP (Shift+S > Add-Ins > Run)."
+    "Checking every {seconds}s. Start TymelineFusion360 (Shift+S > Add-Ins > Run)."
 )
 SYSTEM = """You control Fusion 360 through the tools this process exposes.
 Call list_tools once. It returns each tool's name, description, and parameters.

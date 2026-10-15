@@ -2,9 +2,9 @@
   "autodeskProduct": "Fusion360",
   "type": "addin",
   "id": "6b98393d-7998-4d19-a8e5-c8b5e3d7f4a2",
-  "author": "Faust Machines",
+  "author": "Tymeline",
   "description": {
-    "": "Fusion360 MCP Server"
+    "": "Tymeline Fusion 360"
   },
   "version": "0.1.0",
   "runOnStartup": false,

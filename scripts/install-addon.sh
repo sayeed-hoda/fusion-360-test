@@ -1,5 +1,7 @@
 #!/bin/bash
-# Install/reinstall the Fusion360MCP add-in via symlink (for development)
+# Install/reinstall the Tymeline Fusion 360 add-in via symlink (for development).
+# Fusion shows the Add-Ins name from this folder, which must match the
+# .py and .manifest filenames.
 # Usage: ./scripts/install-addon.sh
 
 set -e
@@ -18,9 +20,10 @@ else
     exit 1
 fi
 
-TARGET="$ADDINS_DIR/Fusion360MCP"
+TARGET="$ADDINS_DIR/TymelineFusion360"
+OLD_TARGET="$ADDINS_DIR/Fusion360MCP"
 
-echo "Installing Fusion360MCP add-in..."
+echo "Installing Tymeline Fusion 360 add-in..."
 echo "  Source: $ADDON_SRC"
 echo "  Target: $TARGET"
 
@@ -28,6 +31,10 @@ echo "  Target: $TARGET"
 if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
     echo "  Removing existing installation..."
     rm -rf "$TARGET"
+fi
+if [ -e "$OLD_TARGET" ] || [ -L "$OLD_TARGET" ]; then
+    echo "  Removing previous Fusion360MCP install..."
+    rm -rf "$OLD_TARGET"
 fi
 
 # Create symlink for development (changes reflect immediately)
@@ -38,7 +45,7 @@ echo ""
 echo "Next steps:"
 echo "  1. Open Fusion 360"
 echo "  2. Press Shift+S to open Scripts and Add-Ins"
-echo "  3. Find 'Fusion360MCP' in the Add-Ins tab"
+echo "  3. Find 'TymelineFusion360' in the Add-Ins tab"
 echo "  4. Click 'Run' to start the add-in"
 echo ""
 echo "The add-in will listen on localhost:9876"

@@ -11,7 +11,7 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 LAUNCH_PATH = REPO / "addon" / "server" / "agent_launch.py"
 BUTTON_PATH = REPO / "addon" / "server" / "pairing_button.py"
-ADDIN_PATH = REPO / "addon" / "Fusion360MCP.py"
+ADDIN_PATH = REPO / "addon" / "TymelineFusion360.py"
 
 
 def _load():
@@ -187,4 +187,25 @@ def test_the_add_in_does_not_choose_the_pairing_folder():
     assert "pair_and_start" in button_text
     assert "addButtonDefinition" in button_text
     assert "Paste the TYM1 pairing key" in button_text
+    assert "_LOGO_FOLDER" in button_text
     assert "_install_pairing_button" in addin_text
+
+
+def test_toolbar_logo_matches_fusion_icon_sizes():
+    """Fusion picks the toolbar icon by filename and pixel size."""
+    import struct
+
+    folder = REPO / "addon" / "resources" / "tymeline"
+    expected = {
+        "16x16.png": (16, 16),
+        "16x16@2x.png": (32, 32),
+        "32x32.png": (32, 32),
+        "32x32@2x.png": (64, 64),
+        "64x64.png": (64, 64),
+    }
+    for name, size in expected.items():
+        data = (folder / name).read_bytes()
+        assert data[:8] == b"\x89PNG\r\n\x1a\n", name
+        assert data[12:16] == b"IHDR", name
+        assert struct.unpack(">II", data[16:24]) == size, name
+        assert data[25] == 6, name

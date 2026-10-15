@@ -210,7 +210,7 @@ def main(mode: str, host: str, port: int) -> int:
                     type="text",
                     text=f"Error ({name}): {exc}\n\n"
                     "Make sure Fusion 360 is running and the "
-                    "Fusion360MCP add-in is started.",
+                    "TymelineFusion360 add-in is started.",
                 )
             ]
             return types.CallToolResult(

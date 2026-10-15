@@ -37,13 +37,15 @@ Two components:
 **Manual install:**
 ```bash
 # macOS
-cp -r addon ~/Library/Application\ Support/Autodesk/Autodesk\ Fusion\ 360/API/AddIns/Fusion360MCP
+cp -r addon ~/Library/Application\ Support/Autodesk/Autodesk\ Fusion\ 360/API/AddIns/TymelineFusion360
 
 # Windows (PowerShell)
-Copy-Item -Recurse addon "$env:APPDATA\Autodesk\Autodesk Fusion 360\API\AddIns\Fusion360MCP"
+Copy-Item -Recurse addon "$env:APPDATA\Autodesk\Autodesk Fusion 360\API\AddIns\TymelineFusion360"
 ```
 
-Then start it in Fusion: **Shift+S → Add-Ins → Fusion360MCP → Run**
+The destination folder has to be named `TymelineFusion360`. Fusion shows that folder name in Scripts and Add-Ins, and it must match `TymelineFusion360.py` and `TymelineFusion360.manifest`.
+
+Then start it in Fusion: **Shift+S → Add-Ins → TymelineFusion360 → Run**
 
 You should see `[MCP] Server listening on localhost:9876` in the TEXT COMMANDS window.
 
@@ -99,7 +101,7 @@ $env:FUSION_MCP_HOST = "0.0.0.0"
 export FUSION_MCP_HOST=0.0.0.0
 ```
 
-Then start Fusion and run the `Fusion360MCP` add-in. The log line `Server listening on 0.0.0.0:9876` confirms the bind.
+Then start Fusion and run the `TymelineFusion360` add-in. The log line `Server listening on 0.0.0.0:9876` confirms the bind.
 
 **On the MCP-server host**, point the client at the Fusion host's LAN IP:
 
@@ -120,7 +122,7 @@ Call the `ping` tool from your client. If it returns `{"ok": true, "status": "po
 ### Uninstalling
 
 1. Remove the `fusion360` entry from your MCP client config
-2. Stop the add-in in Fusion (Shift+S → Add-Ins → Fusion360MCP → Stop)
+2. Stop the add-in in Fusion (Shift+S → Add-Ins → TymelineFusion360 → Stop)
 3. Delete the add-in folder from Fusion's AddIns directory
 
 ## Available Tools (93)

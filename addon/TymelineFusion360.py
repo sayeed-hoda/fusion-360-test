@@ -1,5 +1,5 @@
 """
-Fusion360MCP Add-in (v2)
+Tymeline Fusion 360 Add-in (v2)
 
 Registers a CustomEvent so all Fusion API calls run on the main thread.
 A TCP socket server (daemon thread) accepts JSON commands and dispatches
@@ -54,7 +54,7 @@ def run(context):
         _start_repl_announce(port)
         _install_pairing_button()
 
-        _log.info("Fusion360MCP loaded - server on %s:%s  (log: %s)",
+        _log.info("TymelineFusion360 loaded - server on %s:%s  (log: %s)",
                   host, port, LOG_PATH)
         if host not in ("localhost", "127.0.0.1"):
             _log.warning("Listening on non-loopback host %s — "
@@ -63,8 +63,8 @@ def run(context):
     except Exception:
         msg = traceback.format_exc()
         if _ui:
-            _ui.messageBox(f"Fusion360MCP failed to start:\n{msg}")
-        print(f"Fusion360MCP startup error:\n{msg}")
+            _ui.messageBox(f"Tymeline Fusion 360 failed to start:\n{msg}")
+        print(f"Tymeline Fusion 360 startup error:\n{msg}")
 
 
 def _start_repl_announce(command_port: int) -> None:
@@ -116,7 +116,7 @@ def stop(context):
         traceback.print_exc()
 
     if _log:
-        _log.info("Fusion360MCP stopped")
+        _log.info("TymelineFusion360 stopped")
 
     _server = None
     _bridge = None

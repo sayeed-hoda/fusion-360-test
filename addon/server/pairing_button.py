@@ -6,6 +6,7 @@ The buttons call ``fusion-agent``. They do not choose the pairing folder.
 from __future__ import annotations
 
 import traceback
+from pathlib import Path
 
 import adsk.core
 
@@ -17,6 +18,9 @@ UNPAIR_CMD_ID = "tymeline_fusion_unpair"
 PANEL_ID = "TymelineFusionPanel"
 WORKSPACE_ID = "FusionSolidEnvironment"
 _ADDINS_PANEL = "SolidScriptsAddinsPanel"
+# Fusion reads 16x16, 32x32, and the @2x / 64x64 files from this folder.
+# The path is absolute so a symlinked add-in still finds the icons.
+_LOGO_FOLDER = str(Path(__file__).resolve().parents[1] / "resources" / "tymeline")
 
 _log = get_logger("pairing")
 _handlers: list = []
@@ -25,18 +29,20 @@ _handlers: list = []
 def install(ui: adsk.core.UserInterface) -> None:
     """Add Pair and Unpair to the Design workspace Tymeline panel."""
     _remove_controls(ui)
+    if not Path(_LOGO_FOLDER).is_dir():
+        _log.warning("Tymeline toolbar icon folder is missing: %s", _LOGO_FOLDER)
     pair_def = ui.commandDefinitions.addButtonDefinition(
         PAIR_CMD_ID,
         "Pair with Tymeline",
         "Paste your Tymeline API key (it starts with TYM1.). "
         "This is the key that opens the WebSocket to Tymeline.",
-        "",
+        _LOGO_FOLDER,
     )
     unpair_def = ui.commandDefinitions.addButtonDefinition(
         UNPAIR_CMD_ID,
         "Unpair Tymeline",
         "Forget the Tymeline pairing key and disconnect.",
-        "",
+        _LOGO_FOLDER,
     )
     pair_created = _PairCreated()
     pair_def.commandCreated.add(pair_created)
@@ -92,6 +98,18 @@ def _remove_controls(ui: adsk.core.UserInterface) -> None:
             command.deleteMe()
 
 
+def _fit_dialog(cmd: adsk.core.Command, width: int, height: int) -> None:
+    """Widen the click dialog so the pairing text is readable."""
+    for name in ("setDialogInitialSize", "setDialogMinimumSize"):
+        setter = getattr(cmd, name, None)
+        if setter is None:
+            continue
+        try:
+            setter(width, height)
+        except Exception:
+            _log.info("Fusion did not accept dialog size via %s.", name)
+
+
 def _report(message: str, *, error: bool = False) -> None:
     text = message.strip() or ("Pairing failed." if error else "Paired.")
     if error:
@@ -112,6 +130,15 @@ class _PairCreated(adsk.core.CommandCreatedEventHandler):
     def notify(self, args: adsk.core.CommandCreatedEventArgs) -> None:
         try:
             cmd = adsk.core.CommandCreatedEventArgs.cast(args).command
+            _fit_dialog(cmd, 480, 180)
+            cmd.commandInputs.addTextBoxCommandInput(
+                "about",
+                "",
+                "Paste the Tymeline pairing key from your account. "
+                "It starts with TYM1. and is the key that connects Fusion.",
+                3,
+                True,
+            )
             cmd.commandInputs.addStringValueInput(
                 "token",
                 "Paste the TYM1 pairing key",
@@ -167,6 +194,7 @@ class _UnpairCreated(adsk.core.CommandCreatedEventHandler):
     def notify(self, args: adsk.core.CommandCreatedEventArgs) -> None:
         try:
             cmd = adsk.core.CommandCreatedEventArgs.cast(args).command
+            _fit_dialog(cmd, 420, 160)
             cmd.commandInputs.addTextBoxCommandInput(
                 "confirm",
                 "Unpair",
