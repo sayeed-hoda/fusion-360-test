@@ -193,7 +193,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("stop", help="stop the running connection")
     sub.add_parser(
         "repl",
-        help="chat with GLM against the local Fusion add-in (needs GLM_API_KEY)",
+        help="wait for Fusion's WebSocket, then chat with GLM (needs GLM_API_KEY)",
     )
     return parser
 

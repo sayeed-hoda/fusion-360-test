@@ -1,10 +1,11 @@
-"""Chat with a GLM model that drives the local Fusion add-in.
+"""Chat with a GLM model after Fusion opens the pairing WebSocket.
 
-Fusion must already be listening on 127.0.0.1:9876. This process sends the
-conversation to an OpenAI-compatible ``/v1/chat/completions`` endpoint and
-applies tool calls locally. The model never opens a socket to Fusion.
+Start this process first. It listens on
+``ws://127.0.0.1:53117/api/v1/integrations/plugin/connect`` and waits.
+Paste a ``TYM1.`` key that uses that url into Fusion. ``fusion-agent serve``
+dials it, sends hello, and then runs ``list_tools`` and ``call_tool``.
 
-The API key is read from the environment. It is not stored in this repo.
+The GLM key is read from the environment. It is not stored in this repo.
 
     export GLM_API_KEY='...'
     export GLM_BASE_URL='https://example.modal.direct/v1'   # optional
@@ -37,6 +38,10 @@ MISSING_KEY_MESSAGE = (
 WAITING_MESSAGE = (
     "Waiting for the Fusion add-in on 127.0.0.1:9876. "
     "Checking every {seconds}s. Start TymelineFusion360 (Shift+S > Add-Ins > Run)."
+)
+WAITING_SOCKET_MESSAGE = (
+    "Waiting for Fusion to open a WebSocket at {url}. "
+    "Paste a TYM1 key that uses this url, then Pair in Fusion."
 )
 SYSTEM = """You control Fusion 360 through the tools this process exposes.
 Call list_tools once. It returns each tool's name, description, and parameters.
@@ -409,21 +414,49 @@ def main(
     write: Callable[[str], None] = print,
     sleep: Callable[[float], None] = time.sleep,
     poll_s: float = FUSION_POLL_S,
+    link: Any = None,
 ) -> int:
-    """Start the chat. Waits until the add-in answers. Returns 1 with no key."""
+    """Start the chat. Waits for Fusion's WebSocket, then talks to GLM.
+
+    A ``service`` argument keeps the older add-in poll, used by tests.
+    Returns 1 when the GLM key is missing.
+    """
     api_key = api_key_from_env()
     if not api_key:
         write(MISSING_KEY_MESSAGE)
         return 1
+    fusion_link = None
     if service is None:
-        from fusion_agent.service import CommandService
+        fusion_link = link
+        if fusion_link is None:
+            from fusion_agent.repl_link import FusionReplLink
 
-        service = CommandService()
-    try:
-        wait_for_addon(service, write=write, sleep=sleep, poll_s=poll_s)
-    except KeyboardInterrupt:
-        write("")
-        return 0
+            fusion_link = FusionReplLink(status=write)
+            try:
+                fusion_link.start()
+            except OSError as exc:
+                write(f"Could not listen for Fusion: {exc}")
+                fusion_link.stop()
+                return 1
+        write(WAITING_SOCKET_MESSAGE.format(url=fusion_link.url))
+        try:
+            hello = fusion_link.wait_for_hello()
+        except KeyboardInterrupt:
+            write("")
+            fusion_link.stop()
+            return 0
+        document = hello.get("document") if isinstance(hello, dict) else None
+        if isinstance(document, str) and document:
+            write(f"Fusion WebSocket connected. document={document}")
+        else:
+            write("Fusion WebSocket connected.")
+        service = fusion_link
+    else:
+        try:
+            wait_for_addon(service, write=write, sleep=sleep, poll_s=poll_s)
+        except KeyboardInterrupt:
+            write("")
+            return 0
     model = os.environ.get("GLM_MODEL") or DEFAULT_MODEL
     if complete is None:
         base_url = os.environ.get("GLM_BASE_URL") or DEFAULT_BASE_URL
@@ -437,4 +470,7 @@ def main(
         run_repl(service=service, complete=complete, read_line=read_line, write=write)
     except KeyboardInterrupt:
         write("")
+    finally:
+        if fusion_link is not None:
+            fusion_link.stop()
     return 0
